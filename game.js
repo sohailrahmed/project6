@@ -7,6 +7,7 @@ const ctx = canvas.getContext("2d");
 const playerHealthValueEl = document.getElementById("player-health-value");
 const weaponValueEl = document.getElementById("weapon-value");
 const enemiesValueEl = document.getElementById("enemies-value");
+const coinsValueEl = document.getElementById("coins-value");
 const overlayEl = document.getElementById("message-overlay");
 const messageTextEl = document.getElementById("message-text");
 const restartButton = document.getElementById("restart-button");
@@ -15,6 +16,7 @@ const ROOM_WIDTH = 640;
 const ROOM_HEIGHT = 480;
 const ROOM_MARGIN_X = (canvas.width - ROOM_WIDTH) / 2;
 const ROOM_MARGIN_Y = (canvas.height - ROOM_HEIGHT) / 2;
+const ROOM_TRANSITION_SPEED = 0.018; // progress per frame; ~1.1 sec for full slide
 
 const PLAYER_SPEED = 2.4;
 const PLAYER_SIZE = 24;
@@ -148,6 +150,7 @@ class Player extends Entity {
     this.knockbackNx = 0;
     this.knockbackNy = 0;
     this.contactDamageCooldown = 0;  // frames until next contact can deal 1 heart (prevents multi-enemy stack from one-shotting)
+    this.coins = 0;
   }
 
   reset(x, y, roomId) {
@@ -163,6 +166,7 @@ class Player extends Entity {
     this.knockbackNx = 0;
     this.knockbackNy = 0;
     this.contactDamageCooldown = 0;
+    this.coins = 0;
   }
 }
 
@@ -179,7 +183,8 @@ class Enemy extends Entity {
     this.knockbackNx = 0;
     this.knockbackNy = 0;
     this.fireballCooldown = 0; // used in room where demons shoot
-    this.dropsHearts = false;  // only one enemy per room is set to true in setupEnemies
+    this.dropsHearts = false;  // two enemies per room set in setupEnemies
+    this.dropsCoins = false;   // two enemies per room set in setupEnemies
   }
 
   draw() {
@@ -519,7 +524,19 @@ let enemyProjectiles = []; // slow fireballs thrown by demons in one room
 let explosions = []; // fireball impact effects
 let deathScatterParticles = []; // enemy sword-death scatter pieces
 let heartPickups = []; // { x, y, roomId } — red hearts from dead enemies, +1 HP when collected
+let coinPickups = [];  // { x, y, roomId } — golden coins from dead enemies
 let isGameOver = false;
+
+// Room transition: slide effect when entering a new room
+let roomTransition = {
+  active: false,
+  phase: 1,       // 1 = sliding out current room, 2 = sliding in new room
+  progress: 0,
+  direction: null, // 'left' | 'right' | 'up' | 'down'
+  toRoom: null,
+};
+let cameraOffsetX = 0;
+let cameraOffsetY = 0;
 let victory = false;
 let hasStarted = false; // becomes true after first start
 
@@ -582,10 +599,13 @@ function setupEnemies() {
   // Room 7: BOSS only (no regular enemies), center of room, no blocks in this room
   enemies.push(new Boss(ROOM_MARGIN_X + ROOM_WIDTH / 2, ROOM_MARGIN_Y + ROOM_HEIGHT / 2, BOSS_ROOM));
 
-  // Exactly one enemy per room (0–6) drops hearts when killed; the rest do not
+  // Two enemies per room (0–6) drop hearts; two (different) drop golden coins
   for (let roomId = 0; roomId <= 6; roomId++) {
-    const firstInRoom = enemies.find((e) => e.roomId === roomId && !e.isBoss);
-    if (firstInRoom) firstInRoom.dropsHearts = true;
+    const inRoom = enemies.filter((e) => e.roomId === roomId && !e.isBoss);
+    if (inRoom[0]) inRoom[0].dropsHearts = true;
+    if (inRoom[1]) inRoom[1].dropsHearts = true;
+    if (inRoom[2]) inRoom[2].dropsCoins = true;
+    if (inRoom[3]) inRoom[3].dropsCoins = true;
   }
 }
 
@@ -667,6 +687,7 @@ function resetGame() {
   enemyProjectiles = [];
   deathScatterParticles = [];
   heartPickups = [];
+  coinPickups = [];
   isGameOver = false;
   victory = false;
   overlayEl.classList.add("hidden");
@@ -674,6 +695,7 @@ function resetGame() {
 }
 
 const HEART_PICKUP_R = 14; // touch radius for collecting a heart
+const COIN_PICKUP_R = 12; // touch radius for collecting a coin
 
 function spawnHeartPickups(x, y, roomId, count) {
   if (count <= 0) return;
@@ -681,6 +703,19 @@ function spawnHeartPickups(x, y, roomId, count) {
   const startX = x - ((count - 1) * spacing) / 2;
   for (let i = 0; i < count; i++) {
     heartPickups.push({
+      x: startX + i * spacing,
+      y,
+      roomId,
+    });
+  }
+}
+
+function spawnCoinPickups(x, y, roomId, count) {
+  if (count <= 0) return;
+  const spacing = 20;
+  const startX = x - ((count - 1) * spacing) / 2;
+  for (let i = 0; i < count; i++) {
+    coinPickups.push({
       x: startX + i * spacing,
       y,
       roomId,
@@ -735,6 +770,7 @@ function updateHUD() {
     player.weapon === WEAPON_FIREBALL ? "Fireball" : "Sword";
   const aliveEnemies = enemies.filter((e) => e.hp > 0).length;
   enemiesValueEl.textContent = aliveEnemies.toString();
+  if (coinsValueEl) coinsValueEl.textContent = player.coins.toString();
 }
 
 function showStartScreen() {
@@ -878,12 +914,17 @@ function performSwordAttack() {
           const count = enemy.size === ENEMY_ELITE_SIZE ? 2 : 1;
           spawnHeartPickups(enemy.x, enemy.y, enemy.roomId, count);
         }
+        if (!enemy.isBoss && enemy.dropsCoins) {
+          const count = enemy.size === ENEMY_ELITE_SIZE ? 2 : 1;
+          spawnCoinPickups(enemy.x, enemy.y, enemy.roomId, count);
+        }
       }
     }
   });
 }
 
 function updatePlayerMovement() {
+  if (roomTransition.active) return; // no movement during room slide
   // Apply knockback first (slower, over multiple frames). Never allow ending inside a block.
   if (player.knockbackRemaining > 0) {
     const move = Math.min(KNOCKBACK_SPEED_PER_FRAME, player.knockbackRemaining);
@@ -1007,65 +1048,146 @@ function allNonBossEnemiesDead() {
   return enemies.every((e) => e.roomId === BOSS_ROOM || e.hp <= 0);
 }
 
-function handleRoomTransitions() {
-  const room = ROOMS[player.currentRoom];
+function startRoomTransition(toRoomId, direction) {
+  roomTransition.active = true;
+  roomTransition.phase = 1;
+  roomTransition.progress = 0;
+  roomTransition.direction = direction;
+  roomTransition.toRoom = toRoomId;
+  // Snap player to door center for clean slide
+  const midX = ROOM_MARGIN_X + ROOM_WIDTH / 2;
+  const midY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
+  if (direction === "left") {
+    player.x = ROOM_MARGIN_X + player.boundsHalfW + 2;
+    player.y = midY;
+  } else if (direction === "right") {
+    player.x = ROOM_MARGIN_X + ROOM_WIDTH - player.boundsHalfW - 2;
+    player.y = midY;
+  } else if (direction === "up") {
+    player.x = midX;
+    player.y = ROOM_MARGIN_Y + player.boundsHalfH + 2;
+  } else {
+    player.x = midX;
+    player.y = ROOM_MARGIN_Y + ROOM_HEIGHT - player.boundsHalfH - 2;
+  }
+}
 
+function updateRoomTransition() {
+  if (!roomTransition.active) {
+    cameraOffsetX = 0;
+    cameraOffsetY = 0;
+    return;
+  }
+  const t = roomTransition;
+  t.progress += ROOM_TRANSITION_SPEED;
+
+  if (t.phase === 1) {
+    if (t.progress >= 1) {
+      t.progress = 0;
+      t.phase = 2;
+      player.currentRoom = t.toRoom;
+      const midX = ROOM_MARGIN_X + ROOM_WIDTH / 2;
+      const midY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
+      if (t.direction === "left") {
+        player.x = ROOM_MARGIN_X + ROOM_WIDTH - player.boundsHalfW - 10;
+        player.y = midY;
+      } else if (t.direction === "right") {
+        player.x = ROOM_MARGIN_X + player.boundsHalfW + 10;
+        player.y = midY;
+      } else if (t.direction === "up") {
+        player.x = midX;
+        player.y = ROOM_MARGIN_Y + ROOM_HEIGHT - player.boundsHalfH - 10;
+      } else {
+        player.x = midX;
+        player.y = ROOM_MARGIN_Y + player.boundsHalfH + 10;
+      }
+    }
+  } else {
+    if (t.progress >= 1) {
+      t.active = false;
+    }
+  }
+
+  // Compute camera offset: old room shifts opposite to player; new room slides into place
+  const d = t.direction;
+  if (t.phase === 1) {
+    // Phase 1: current room slides away in the opposite direction the player is moving
+    if (d === "left") {
+      cameraOffsetX = t.progress * ROOM_WIDTH;
+      cameraOffsetY = 0;
+    } else if (d === "right") {
+      cameraOffsetX = -t.progress * ROOM_WIDTH;
+      cameraOffsetY = 0;
+    } else if (d === "up") {
+      cameraOffsetX = 0;
+      cameraOffsetY = t.progress * ROOM_HEIGHT;
+    } else {
+      cameraOffsetX = 0;
+      cameraOffsetY = -t.progress * ROOM_HEIGHT;
+    }
+  } else {
+    if (d === "left") {
+      cameraOffsetX = -(1 - t.progress) * ROOM_WIDTH;
+      cameraOffsetY = 0;
+    } else if (d === "right") {
+      cameraOffsetX = (1 - t.progress) * ROOM_WIDTH;
+      cameraOffsetY = 0;
+    } else if (d === "up") {
+      cameraOffsetX = 0;
+      cameraOffsetY = -(1 - t.progress) * ROOM_HEIGHT;
+    } else {
+      cameraOffsetX = 0;
+      cameraOffsetY = (1 - t.progress) * ROOM_HEIGHT;
+    }
+  }
+}
+
+function handleRoomTransitions() {
+  if (roomTransition.active) return;
+
+  const room = ROOMS[player.currentRoom];
   const leftDoorY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
   const rightDoorY = leftDoorY;
   const topDoorX = ROOM_MARGIN_X + ROOM_WIDTH / 2;
   const bottomDoorX = topDoorX;
+  const doorThickness = 60;
 
-  const doorThickness = 60; // vertical extent for side doors, horizontal for top/bottom
-
-  // Boss room (7) is only enterable when all other enemies are dead
   const canEnterBossRoom = (newRoomId) => newRoomId !== BOSS_ROOM || allNonBossEnemiesDead();
 
-  // Left door (exit current room left -> enter new room through its right door)
   if (
     room.neighbors.left !== undefined &&
     canEnterBossRoom(room.neighbors.left) &&
     player.x - player.boundsHalfW <= ROOM_MARGIN_X + 4 &&
     Math.abs(player.y - leftDoorY) <= doorThickness / 2
   ) {
-    player.currentRoom = room.neighbors.left;
-    player.x = ROOM_MARGIN_X + ROOM_WIDTH - player.boundsHalfW - 10;
-    player.y = leftDoorY;
+    startRoomTransition(room.neighbors.left, "left");
+    return;
   }
-
-  // Right door (enter new room through its left door)
   if (
     room.neighbors.right !== undefined &&
     canEnterBossRoom(room.neighbors.right) &&
     player.x + player.boundsHalfW >= ROOM_MARGIN_X + ROOM_WIDTH - 4 &&
     Math.abs(player.y - rightDoorY) <= doorThickness / 2
   ) {
-    player.currentRoom = room.neighbors.right;
-    player.x = ROOM_MARGIN_X + player.boundsHalfW + 10;
-    player.y = rightDoorY;
+    startRoomTransition(room.neighbors.right, "right");
+    return;
   }
-
-  // Top door (enter new room through its bottom door)
   if (
     room.neighbors.up !== undefined &&
     canEnterBossRoom(room.neighbors.up) &&
     player.y - player.boundsHalfH <= ROOM_MARGIN_Y + 4 &&
     Math.abs(player.x - topDoorX) <= doorThickness / 2
   ) {
-    player.currentRoom = room.neighbors.up;
-    player.y = ROOM_MARGIN_Y + ROOM_HEIGHT - player.boundsHalfH - 10;
-    player.x = topDoorX;
+    startRoomTransition(room.neighbors.up, "up");
+    return;
   }
-
-  // Bottom door (enter new room through its top door)
   if (
     room.neighbors.down !== undefined &&
     canEnterBossRoom(room.neighbors.down) &&
     player.y + player.boundsHalfH >= ROOM_MARGIN_Y + ROOM_HEIGHT - 4 &&
     Math.abs(player.x - bottomDoorX) <= doorThickness / 2
   ) {
-    player.currentRoom = room.neighbors.down;
-    player.y = ROOM_MARGIN_Y + player.boundsHalfH + 10;
-    player.x = bottomDoorX;
+    startRoomTransition(room.neighbors.down, "down");
   }
 }
 
@@ -1229,6 +1351,10 @@ function updateProjectiles() {
             const count = enemy.size === ENEMY_ELITE_SIZE ? 2 : 1;
             spawnHeartPickups(enemy.x, enemy.y, enemy.roomId, count);
           }
+          if (!enemy.isBoss && enemy.dropsCoins) {
+            const count = enemy.size === ENEMY_ELITE_SIZE ? 2 : 1;
+            spawnCoinPickups(enemy.x, enemy.y, enemy.roomId, count);
+          }
         }
       }
     });
@@ -1279,6 +1405,19 @@ function updateHeartPickups() {
       player.hp = Math.min(PLAYER_MAX_HP, player.hp + 1);
       updateHUD();
       return false; // remove heart
+    }
+    return true;
+  });
+}
+
+function updateCoinPickups() {
+  coinPickups = coinPickups.filter((c) => {
+    if (c.roomId !== player.currentRoom) return true;
+    const dx = player.x - c.x, dy = player.y - c.y;
+    if (Math.hypot(dx, dy) < player.boundsHalfW + COIN_PICKUP_R) {
+      player.coins += 1;
+      updateHUD();
+      return false; // remove coin
     }
     return true;
   });
@@ -1464,6 +1603,24 @@ function drawHeartPickups() {
   });
 }
 
+function drawCoinPickups() {
+  coinPickups.forEach((c) => {
+    if (c.roomId !== player.currentRoom) return;
+    const r = COIN_PICKUP_R - 2;
+    const grad = ctx.createRadialGradient(c.x - r * 0.3, c.y - r * 0.3, 0, c.x, c.y, r);
+    grad.addColorStop(0, "#ffd54f");
+    grad.addColorStop(0.6, "#ffc107");
+    grad.addColorStop(1, "#ff8f00");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#f57f17";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+}
+
 function drawEnemyProjectiles() {
   enemyProjectiles.forEach((p) => {
     if (p.roomId !== player.currentRoom || !p.alive) return;
@@ -1516,21 +1673,27 @@ function gameLoop() {
     updateProjectiles();
     updateEnemyProjectiles();
     updateHeartPickups();
+    updateCoinPickups();
     updateExplosions();
     updateDeathScatter();
     checkWinCondition();
+    updateRoomTransition();
   }
 
+  ctx.save();
+  ctx.translate(cameraOffsetX, cameraOffsetY);
   drawRoomBackground();
   drawObstacles();
   drawEnemies();
   drawHeartPickups();
+  drawCoinPickups();
   drawDeathScatter();
   drawEnemyProjectiles();
   drawProjectiles();
   drawExplosions();
   drawPlayer();
   drawUIHints();
+  ctx.restore();
 
   updateHUD();
 
