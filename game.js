@@ -41,8 +41,8 @@ const FIREBALL_SPEED = 5;
 const FIREBALL_SIZE = 10;
 // Damage values & sword geometry
 const FIREBALL_DAMAGE = 5; // each fireball hit
-const SWORD_DAMAGE = 10;   // each sword hit
-const SWORD_RANGE = PLAYER_SIZE * 2; // sword length roughly twice player size
+const SWORD_DAMAGE = 15;   // each sword hit (50% stronger than base)
+const SWORD_RANGE = PLAYER_SIZE * 3; // sword length (50% longer: 3× player size)
 const SWORD_ARC = Math.PI / 2;   // 180° total swing (±90° from facing)
 const SWORD_SWING_DURATION = 15; // frames for full swing animation (20% slower than before)
 
@@ -313,16 +313,16 @@ function obstacleOverlapsDoorway(rx, ry, size) {
   return false;
 }
 
-// Spawn zones (room-local): { x, y, r } so obstacles are never placed on player or enemy spawns
+// Spawn zones (room-local): { x, y, r }. Enemies are kept well away from doors (min ~120px) so the player has room when entering.
 const SPAWN_ZONES = new Map([
-  [0, [{ x: 320, y: 240, r: 75 }, { x: 140, y: 140, r: 35 }, { x: 500, y: 160, r: 35 }, { x: 160, y: 340, r: 35 }, { x: 480, y: 320, r: 35 }]],
-  [1, [{ x: 180, y: 160, r: 35 }, { x: 460, y: 180, r: 35 }, { x: 200, y: 320, r: 35 }, { x: 440, y: 300, r: 35 }]],
-  [2, [{ x: 180, y: 160, r: 35 }, { x: 460, y: 200, r: 35 }, { x: 220, y: 340, r: 35 }, { x: 420, y: 320, r: 35 }]],
-  [3, [{ x: 160, y: 180, r: 35 }, { x: 520, y: 240, r: 35 }, { x: 320, y: 160, r: 35 }, { x: 380, y: 320, r: 35 }]],
-  [4, [{ x: 140, y: 140, r: 40 }, { x: 480, y: 160, r: 40 }, { x: 160, y: 340, r: 40 }, { x: 460, y: 320, r: 40 }]],
-  [5, [{ x: 180, y: 160, r: 40 }, { x: 440, y: 180, r: 40 }, { x: 200, y: 320, r: 40 }, { x: 420, y: 300, r: 40 }]],
-  [6, [{ x: 160, y: 160, r: 40 }, { x: 460, y: 200, r: 40 }, { x: 220, y: 340, r: 40 }, { x: 400, y: 320, r: 40 }]],
-  [7, [{ x: 140, y: 180, r: 40 }, { x: 500, y: 240, r: 40 }, { x: 300, y: 160, r: 40 }, { x: 360, y: 320, r: 40 }]],
+  [0, [{ x: 320, y: 240, r: 75 }, { x: 200, y: 140, r: 35 }, { x: 400, y: 160, r: 35 }, { x: 180, y: 300, r: 35 }, { x: 420, y: 300, r: 35 }]],
+  [1, [{ x: 220, y: 180, r: 35 }, { x: 400, y: 160, r: 35 }, { x: 240, y: 300, r: 35 }, { x: 380, y: 280, r: 35 }]],
+  [2, [{ x: 220, y: 180, r: 35 }, { x: 400, y: 200, r: 35 }, { x: 240, y: 300, r: 35 }, { x: 380, y: 300, r: 35 }]],
+  [3, [{ x: 220, y: 180, r: 35 }, { x: 420, y: 220, r: 35 }, { x: 320, y: 160, r: 35 }, { x: 340, y: 280, r: 35 }]],
+  [4, [{ x: 200, y: 160, r: 40 }, { x: 400, y: 180, r: 40 }, { x: 200, y: 300, r: 40 }, { x: 400, y: 300, r: 40 }]],
+  [5, [{ x: 220, y: 180, r: 40 }, { x: 400, y: 180, r: 40 }, { x: 240, y: 300, r: 40 }, { x: 380, y: 280, r: 40 }]],
+  [6, [{ x: 200, y: 180, r: 40 }, { x: 400, y: 200, r: 40 }, { x: 240, y: 300, r: 40 }, { x: 380, y: 300, r: 40 }]],
+  [7, [{ x: 220, y: 200, r: 40 }, { x: 400, y: 220, r: 40 }, { x: 300, y: 160, r: 40 }, { x: 340, y: 280, r: 40 }]],
 ]);
 
 function obstacleOverlapsSpawnZone(roomId, rx, ry, size) {
@@ -422,50 +422,77 @@ let hasStarted = false; // becomes true after first start
 function setupEnemies() {
   enemies = [];
 
-  // Room 0 – 4 enemies
-  enemies.push(new Enemy(ROOM_MARGIN_X + 140, ROOM_MARGIN_Y + 140, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 500, ROOM_MARGIN_Y + 160, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 340, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 480, ROOM_MARGIN_Y + 320, 0));
+  // Room 0 – 4 enemies (spawn away from right/down doors so player has space when entering)
+  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 140, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 160, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 180, ROOM_MARGIN_Y + 300, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 300, 0));
 
   // Room 1 – 4 enemies
-  enemies.push(new Enemy(ROOM_MARGIN_X + 180, ROOM_MARGIN_Y + 160, 1));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 460, ROOM_MARGIN_Y + 180, 1));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 320, 1));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 440, ROOM_MARGIN_Y + 300, 1));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 1));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 160, 1));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 1));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 280, 1));
 
   // Room 2 – 4 enemies (this room’s demons also throw slow fireballs)
-  enemies.push(new Enemy(ROOM_MARGIN_X + 180, ROOM_MARGIN_Y + 160, 2));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 460, ROOM_MARGIN_Y + 200, 2));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 340, 2));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 320, 2));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 2));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 200, 2));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 2));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 300, 2));
 
   // Room 3 – 4 enemies
-  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 180, 3));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 520, ROOM_MARGIN_Y + 240, 3));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 3));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 220, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 160, 3));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 320, 3));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 280, 3));
 
   // Rooms 4–7 – 4 elite demons each (twice as big, twice as strong)
-  enemies.push(new Enemy(ROOM_MARGIN_X + 140, ROOM_MARGIN_Y + 140, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 480, ROOM_MARGIN_Y + 160, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 340, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 460, ROOM_MARGIN_Y + 320, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 160, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 180, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 300, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 300, 4, true));
 
-  enemies.push(new Enemy(ROOM_MARGIN_X + 180, ROOM_MARGIN_Y + 160, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 440, ROOM_MARGIN_Y + 180, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 320, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 300, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 180, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 280, 5, true));
 
-  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 160, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 460, ROOM_MARGIN_Y + 200, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 340, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 320, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 180, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 200, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 300, 6, true));
 
-  enemies.push(new Enemy(ROOM_MARGIN_X + 140, ROOM_MARGIN_Y + 180, 7, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 500, ROOM_MARGIN_Y + 240, 7, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 200, 7, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 220, 7, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 160, 7, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 320, 7, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 280, 7, true));
+}
+
+// Room-local positions for "far side" of room (opposite the door the player entered). Four slots per entry door.
+function getFarSideSlots(entryDoor) {
+  const slots = {
+    right: [{ lx: 120, ly: 140 }, { lx: 120, ly: 320 }, { lx: 220, ly: 180 }, { lx: 220, ly: 300 }],   // far = left half
+    left:  [{ lx: 520, ly: 140 }, { lx: 520, ly: 320 }, { lx: 420, ly: 180 }, { lx: 420, ly: 300 }],   // far = right half
+    bottom:[{ lx: 140, ly: 100 }, { lx: 340, ly: 100 }, { lx: 500, ly: 180 }, { lx: 180, ly: 200 }],   // far = top half
+    top:   [{ lx: 140, ly: 380 }, { lx: 340, ly: 380 }, { lx: 500, ly: 300 }, { lx: 180, ly: 280 }],   // far = bottom half
+  };
+  return (slots[entryDoor] || slots.right).slice();
+}
+
+function repositionEnemiesToFarSide(roomId, entryDoor) {
+  const roomEnemies = enemies.filter((e) => e.roomId === roomId && e.hp > 0);
+  if (roomEnemies.length === 0) return;
+  const slots = getFarSideSlots(entryDoor);
+  // Shuffle slots so enemy positions vary
+  for (let i = slots.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [slots[i], slots[j]] = [slots[j], slots[i]];
+  }
+  roomEnemies.forEach((e, i) => {
+    const s = slots[i % slots.length];
+    e.x = ROOM_MARGIN_X + s.lx;
+    e.y = ROOM_MARGIN_Y + s.ly;
+  });
 }
 
 function resetGame() {
@@ -474,6 +501,8 @@ function resetGame() {
   const startX = ROOM_MARGIN_X + ROOM_WIDTH / 2;
   const startY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
   player.reset(startX, startY, 0);
+  // Room 0: place enemies on far side from right/bottom (where player typically heads first)
+  repositionEnemiesToFarSide(0, "right");
   projectiles = [];
   enemyProjectiles = [];
   deathScatterParticles = [];
@@ -782,7 +811,7 @@ function handleRoomTransitions() {
 
   const doorThickness = 60; // vertical extent for side doors, horizontal for top/bottom
 
-  // Left door
+  // Left door (exit current room left -> enter new room through its right door)
   if (
     room.neighbors.left !== undefined &&
     player.x - player.boundsHalfW <= ROOM_MARGIN_X + 4 &&
@@ -791,9 +820,10 @@ function handleRoomTransitions() {
     player.currentRoom = room.neighbors.left;
     player.x = ROOM_MARGIN_X + ROOM_WIDTH - player.boundsHalfW - 10;
     player.y = leftDoorY;
+    repositionEnemiesToFarSide(player.currentRoom, "right");
   }
 
-  // Right door
+  // Right door (enter new room through its left door)
   if (
     room.neighbors.right !== undefined &&
     player.x + player.boundsHalfW >= ROOM_MARGIN_X + ROOM_WIDTH - 4 &&
@@ -802,9 +832,10 @@ function handleRoomTransitions() {
     player.currentRoom = room.neighbors.right;
     player.x = ROOM_MARGIN_X + player.boundsHalfW + 10;
     player.y = rightDoorY;
+    repositionEnemiesToFarSide(player.currentRoom, "left");
   }
 
-  // Top door
+  // Top door (enter new room through its bottom door)
   if (
     room.neighbors.up !== undefined &&
     player.y - player.boundsHalfH <= ROOM_MARGIN_Y + 4 &&
@@ -813,9 +844,10 @@ function handleRoomTransitions() {
     player.currentRoom = room.neighbors.up;
     player.y = ROOM_MARGIN_Y + ROOM_HEIGHT - player.boundsHalfH - 10;
     player.x = topDoorX;
+    repositionEnemiesToFarSide(player.currentRoom, "bottom");
   }
 
-  // Bottom door
+  // Bottom door (enter new room through its top door)
   if (
     room.neighbors.down !== undefined &&
     player.y + player.boundsHalfH >= ROOM_MARGIN_Y + ROOM_HEIGHT - 4 &&
@@ -824,6 +856,7 @@ function handleRoomTransitions() {
     player.currentRoom = room.neighbors.down;
     player.y = ROOM_MARGIN_Y + player.boundsHalfH + 10;
     player.x = bottomDoorX;
+    repositionEnemiesToFarSide(player.currentRoom, "top");
   }
 }
 
