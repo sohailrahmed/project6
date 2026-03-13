@@ -29,7 +29,7 @@ const ENEMY_SIZE = 24;
 const ENEMY_MAX_HP = 10;
 const ENEMY_ELITE_SIZE = 48;   // twice as big
 const ENEMY_ELITE_HP = 20;     // twice as strong (HP)
-const ENEMY_ELITE_DAMAGE = 2;  // deal 2 hearts on contact
+const ENEMY_ELITE_DAMAGE = 1;  // 1 heart on contact (same as normal)
 const ENEMY_SPEED = 1.0;
 const ROOM_DEMONS_SHOOT_FIREBALLS = 2; // room index where demons throw slow fireballs
 const ENEMY_FIREBALL_SPEED = 1.2;
@@ -37,10 +37,18 @@ const ENEMY_FIREBALL_COOLDOWN = 90;   // frames between shots per demon
 const ENEMY_FIREBALL_SIZE = 8;
 const ENEMY_FIREBALL_DAMAGE = 1;
 
+const BOSS_ROOM = 7;  // room furthest from spawn; only enterable when all other enemies dead; exactly 1 enemy (the boss)
+const BOSS_SIZE = ENEMY_SIZE * 8;   // 8 blocks large (1 block = base enemy size)
+const BOSS_HP = 50;
+const BOSS_DAMAGE = 1;  // 1 heart on contact
+const BOSS_SPEED = ENEMY_SPEED * 0.5;     // half as fast
+const BOSS_FIREBALL_COOLDOWN = 100;        // frames between 3-shot volleys
+
 const FIREBALL_SPEED = 5;
 const FIREBALL_SIZE = 10;
 // Damage values & sword geometry
 const FIREBALL_DAMAGE = 5; // each fireball hit
+const BOSS_FIREBALL_DAMAGE = 1;  // 1 heart when boss fireball hits player
 const SWORD_DAMAGE = 15;   // each sword hit (50% stronger than base)
 const SWORD_RANGE = PLAYER_SIZE * 3; // sword length (50% longer: 3× player size)
 const SWORD_ARC = Math.PI / 2;   // 180° total swing (±90° from facing)
@@ -187,6 +195,37 @@ class Enemy extends Entity {
   }
 }
 
+class Boss extends Entity {
+  constructor(x, y, roomId) {
+    super(x, y, BOSS_SIZE, "#2a0000");
+    this.hp = BOSS_HP;
+    this.roomId = roomId;
+    this.damage = BOSS_DAMAGE;
+    this.isBoss = true;
+    this.hitFlashTimer = 0;
+    this.knockbackRemaining = 0;
+    this.knockbackNx = 0;
+    this.knockbackNy = 0;
+    this.fireballCooldown = 0;
+    this.speed = BOSS_SPEED;
+  }
+
+  draw() {
+    if (this.hitFlashTimer > 0) {
+      ctx.fillStyle = "#ffffff";
+      this.hitFlashTimer--;
+    } else {
+      ctx.fillStyle = this.color;
+    }
+    ctx.fillRect(
+      this.x - this.half,
+      this.y - this.half,
+      this.size,
+      this.size
+    );
+  }
+}
+
 class Projectile extends Entity {
   constructor(x, y, vx, vy, roomId) {
     super(x, y, FIREBALL_SIZE, "#ffca28");
@@ -285,6 +324,24 @@ function rectIntersect(a, b) {
   );
 }
 
+// Push player out of one obstacle along the minimum penetration axis. Returns true if overlap was resolved.
+function resolvePlayerObstacle(player, ob) {
+  const pl = player.x - player.boundsHalfW, pr = player.x + player.boundsHalfW;
+  const pt = player.y - player.boundsHalfH, pb = player.y + player.boundsHalfH;
+  const ol = ob.x - ob.half, or_ = ob.x + ob.half, ot = ob.y - ob.half, ob_ = ob.y + ob.half;
+  if (pr <= ol || pl >= or_ || pb <= ot || pt >= ob_) return false;
+  const overlapLeft = pr - ol;
+  const overlapRight = or_ - pl;
+  const overlapTop = pb - ot;
+  const overlapBottom = ob_ - pt;
+  const min = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+  if (min === overlapLeft) player.x -= overlapLeft;
+  else if (min === overlapRight) player.x += overlapRight;
+  else if (min === overlapTop) player.y -= overlapTop;
+  else player.y += overlapBottom;
+  return true;
+}
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -313,16 +370,25 @@ function obstacleOverlapsDoorway(rx, ry, size) {
   return false;
 }
 
-// Spawn zones (room-local): { x, y, r }. Enemies are kept well away from doors (min ~120px) so the player has room when entering.
+// Spawn zones (room-local): { x, y, r }. Radii 50 so obstacles never overlap enemy spawns or far-side slots.
+const SPAWN_ZONE_R = 50;
+// All far-side slot positions (used when repositioning); obstacles must not be placed in these. 5 per entry × 4 = 20.
+const FAR_SIDE_SLOTS_ALL = [
+  { x: 100, y: 120 }, { x: 100, y: 240 }, { x: 100, y: 360 }, { x: 200, y: 180 }, { x: 200, y: 300 },
+  { x: 540, y: 120 }, { x: 540, y: 240 }, { x: 540, y: 360 }, { x: 440, y: 180 }, { x: 440, y: 300 },
+  { x: 120, y: 80 }, { x: 280, y: 80 }, { x: 440, y: 80 }, { x: 200, y: 160 }, { x: 400, y: 160 },
+  { x: 120, y: 400 }, { x: 280, y: 400 }, { x: 440, y: 400 }, { x: 200, y: 320 }, { x: 400, y: 320 },
+].map((p) => ({ ...p, r: SPAWN_ZONE_R }));
+
 const SPAWN_ZONES = new Map([
-  [0, [{ x: 320, y: 240, r: 75 }, { x: 200, y: 140, r: 35 }, { x: 400, y: 160, r: 35 }, { x: 180, y: 300, r: 35 }, { x: 420, y: 300, r: 35 }]],
-  [1, [{ x: 220, y: 180, r: 35 }, { x: 400, y: 160, r: 35 }, { x: 240, y: 300, r: 35 }, { x: 380, y: 280, r: 35 }]],
-  [2, [{ x: 220, y: 180, r: 35 }, { x: 400, y: 200, r: 35 }, { x: 240, y: 300, r: 35 }, { x: 380, y: 300, r: 35 }]],
-  [3, [{ x: 220, y: 180, r: 35 }, { x: 420, y: 220, r: 35 }, { x: 320, y: 160, r: 35 }, { x: 340, y: 280, r: 35 }]],
-  [4, [{ x: 200, y: 160, r: 40 }, { x: 400, y: 180, r: 40 }, { x: 200, y: 300, r: 40 }, { x: 400, y: 300, r: 40 }]],
-  [5, [{ x: 220, y: 180, r: 40 }, { x: 400, y: 180, r: 40 }, { x: 240, y: 300, r: 40 }, { x: 380, y: 280, r: 40 }]],
-  [6, [{ x: 200, y: 180, r: 40 }, { x: 400, y: 200, r: 40 }, { x: 240, y: 300, r: 40 }, { x: 380, y: 300, r: 40 }]],
-  [7, [{ x: 220, y: 200, r: 40 }, { x: 400, y: 220, r: 40 }, { x: 300, y: 160, r: 40 }, { x: 340, y: 280, r: 40 }]],
+  [0, [{ x: 320, y: 240, r: 75 }, { x: 200, y: 140, r: SPAWN_ZONE_R }, { x: 400, y: 160, r: SPAWN_ZONE_R }, { x: 180, y: 300, r: SPAWN_ZONE_R }, { x: 420, y: 300, r: SPAWN_ZONE_R }, { x: 260, y: 200, r: SPAWN_ZONE_R }, { x: 320, y: 260, r: SPAWN_ZONE_R }, { x: 240, y: 180, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [1, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 160, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 280, r: SPAWN_ZONE_R }, { x: 300, y: 220, r: SPAWN_ZONE_R }, { x: 340, y: 140, r: SPAWN_ZONE_R }, { x: 260, y: 240, r: SPAWN_ZONE_R }, { x: 360, y: 200, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [2, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 200, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 300, r: SPAWN_ZONE_R }, { x: 320, y: 240, r: SPAWN_ZONE_R }, { x: 280, y: 140, r: SPAWN_ZONE_R }, { x: 300, y: 260, r: SPAWN_ZONE_R }, { x: 360, y: 180, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [3, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 420, y: 220, r: SPAWN_ZONE_R }, { x: 320, y: 160, r: SPAWN_ZONE_R }, { x: 340, y: 280, r: SPAWN_ZONE_R }, { x: 260, y: 240, r: SPAWN_ZONE_R }, { x: 380, y: 200, r: SPAWN_ZONE_R }, { x: 280, y: 220, r: SPAWN_ZONE_R }, { x: 360, y: 260, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [4, [{ x: 200, y: 160, r: SPAWN_ZONE_R }, { x: 400, y: 180, r: SPAWN_ZONE_R }, { x: 200, y: 300, r: SPAWN_ZONE_R }, { x: 400, y: 300, r: SPAWN_ZONE_R }, { x: 280, y: 220, r: SPAWN_ZONE_R }, { x: 320, y: 140, r: SPAWN_ZONE_R }, { x: 240, y: 260, r: SPAWN_ZONE_R }, { x: 360, y: 240, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [5, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 180, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 280, r: SPAWN_ZONE_R }, { x: 300, y: 240, r: SPAWN_ZONE_R }, { x: 340, y: 120, r: SPAWN_ZONE_R }, { x: 260, y: 220, r: SPAWN_ZONE_R }, { x: 360, y: 260, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [6, [{ x: 200, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 200, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 300, r: SPAWN_ZONE_R }, { x: 280, y: 240, r: SPAWN_ZONE_R }, { x: 320, y: 160, r: SPAWN_ZONE_R }, { x: 260, y: 220, r: SPAWN_ZONE_R }, { x: 360, y: 260, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [7, [{ x: 320, y: 240, r: SPAWN_ZONE_R }]], // boss room: only center spawn zone (no blocks)
 ]);
 
 function obstacleOverlapsSpawnZone(roomId, rx, ry, size) {
@@ -332,6 +398,15 @@ function obstacleOverlapsSpawnZone(roomId, rx, ry, size) {
   for (const z of zones) {
     const dist = Math.hypot(rx - z.x, ry - z.y);
     if (dist < obsR + z.r) return true;
+  }
+  return false;
+}
+
+function positionOverlapsObstacle(roomId, worldX, worldY, halfSize) {
+  const obstacles = roomObstacles.get(roomId) || [];
+  const r = halfSize;
+  for (const ob of obstacles) {
+    if (rectIntersect({ x: worldX, y: worldY, boundsHalfW: r, boundsHalfH: r }, ob)) return true;
   }
   return false;
 }
@@ -348,61 +423,72 @@ function setupRoomObstacles() {
   roomObstacles.clear();
   const add = (roomId, x, y, size) => addObstacleToRoom(roomId, x, y, size);
 
-  // Room 0 – mix of 2, 3, 4, 5 blocks
+  // Room 0 – clusters of blocks
   add(0, 120, 100, 28); add(0, 148, 100, 28); add(0, 176, 100, 28); add(0, 204, 100, 28); add(0, 232, 100, 28); // block of 5
   add(0, 480, 140, 32); add(0, 512, 140, 32); add(0, 544, 140, 32); // block of 3
-  add(0, 180, 340, 26); add(0, 206, 340, 26); // block of 2
-  add(0, 420, 320, 30); add(0, 450, 320, 30); add(0, 480, 320, 30); add(0, 510, 320, 30); // block of 4
-  add(0, 320, 220, 28); add(0, 348, 220, 28); // block of 2
+  add(0, 180, 340, 26); add(0, 206, 340, 26); add(0, 232, 340, 26); add(0, 258, 340, 26); // block of 4
+  add(0, 420, 320, 30); add(0, 450, 320, 30); add(0, 480, 320, 30); add(0, 510, 320, 30); add(0, 540, 320, 30); // block of 5
+  add(0, 320, 220, 28); add(0, 348, 220, 28); add(0, 376, 220, 28); // block of 3
+  add(0, 80, 260, 26); add(0, 106, 260, 26); add(0, 132, 260, 26); add(0, 158, 260, 26); // cluster left
+  add(0, 560, 260, 28); add(0, 588, 260, 28); add(0, 616, 260, 28); // cluster right
+  add(0, 260, 80, 26); add(0, 286, 80, 26); add(0, 312, 80, 26); add(0, 338, 80, 26); add(0, 364, 80, 26); // cluster top
 
   // Room 1
-  add(1, 100, 120, 30); add(1, 130, 120, 30); add(1, 160, 120, 30); // block of 3
+  add(1, 100, 120, 30); add(1, 130, 120, 30); add(1, 160, 120, 30); add(1, 190, 120, 30); // block of 4
   add(1, 520, 100, 26); add(1, 546, 100, 26); add(1, 572, 100, 26); add(1, 598, 100, 26); add(1, 624, 100, 26); // block of 5
-  add(1, 200, 360, 32); add(1, 232, 360, 32); // block of 2
-  add(1, 380, 180, 28); add(1, 408, 180, 28); add(1, 436, 180, 28); add(1, 464, 180, 28); // block of 4
-  add(1, 280, 380, 26); add(1, 306, 380, 26); add(1, 332, 380, 26); // block of 3
+  add(1, 200, 360, 32); add(1, 232, 360, 32); add(1, 264, 360, 32); add(1, 296, 360, 32); // block of 4
+  add(1, 380, 180, 28); add(1, 408, 180, 28); add(1, 436, 180, 28); add(1, 464, 180, 28); add(1, 492, 180, 28); // block of 5
+  add(1, 280, 380, 26); add(1, 306, 380, 26); add(1, 332, 380, 26); add(1, 358, 380, 26); // block of 4
+  add(1, 60, 260, 28); add(1, 88, 260, 28); add(1, 116, 260, 28); add(1, 144, 260, 28); // cluster left
+  add(1, 260, 60, 26); add(1, 286, 60, 26); add(1, 312, 60, 26); add(1, 338, 60, 26); // cluster top
 
   // Room 2
-  add(2, 80, 80, 28); add(2, 108, 80, 28); add(2, 136, 80, 28); add(2, 164, 80, 28); // block of 4
-  add(2, 540, 140, 30); add(2, 570, 140, 30); // block of 2
-  add(2, 140, 380, 26); add(2, 166, 380, 26); add(2, 192, 380, 26); add(2, 218, 380, 26); add(2, 244, 380, 26); // block of 5
-  add(2, 460, 340, 32); add(2, 492, 340, 32); add(2, 524, 340, 32); // block of 3
-  add(2, 340, 260, 28); add(2, 368, 260, 28); // block of 2
+  add(2, 80, 80, 28); add(2, 108, 80, 28); add(2, 136, 80, 28); add(2, 164, 80, 28); add(2, 192, 80, 28); // block of 5
+  add(2, 540, 140, 30); add(2, 570, 140, 30); add(2, 600, 140, 30); add(2, 618, 140, 30); // block of 4
+  add(2, 140, 380, 26); add(2, 166, 380, 26); add(2, 192, 380, 26); add(2, 218, 380, 26); add(2, 244, 380, 26); add(2, 270, 380, 26); // block of 6
+  add(2, 460, 340, 32); add(2, 492, 340, 32); add(2, 524, 340, 32); add(2, 556, 340, 32); // block of 4
+  add(2, 340, 260, 28); add(2, 368, 260, 28); add(2, 396, 260, 28); add(2, 424, 260, 28); // block of 4
+  add(2, 80, 260, 26); add(2, 106, 260, 26); add(2, 132, 260, 26); add(2, 158, 260, 26); // cluster left
+  add(2, 580, 260, 28); add(2, 608, 260, 28); add(2, 622, 260, 28); // cluster right
 
   // Room 3
-  add(3, 120, 200, 30); add(3, 150, 200, 30); add(3, 180, 200, 30); // block of 3
-  add(3, 400, 80, 26); add(3, 426, 80, 26); add(3, 452, 80, 26); add(3, 478, 80, 26); // block of 4
-  add(3, 200, 360, 28); add(3, 228, 360, 28); add(3, 256, 360, 28); add(3, 284, 360, 28); add(3, 312, 360, 28); // block of 5
-  add(3, 520, 280, 32); add(3, 552, 280, 32); // block of 2
-  add(3, 350, 140, 26); add(3, 376, 140, 26); // block of 2
+  add(3, 120, 200, 30); add(3, 150, 200, 30); add(3, 180, 200, 30); add(3, 210, 200, 30); add(3, 240, 200, 30); // block of 5
+  add(3, 400, 80, 26); add(3, 426, 80, 26); add(3, 452, 80, 26); add(3, 478, 80, 26); add(3, 504, 80, 26); add(3, 530, 80, 26); // block of 6
+  add(3, 200, 360, 28); add(3, 228, 360, 28); add(3, 256, 360, 28); add(3, 284, 360, 28); add(3, 312, 360, 28); add(3, 340, 360, 28); // block of 6
+  add(3, 520, 280, 32); add(3, 552, 280, 32); add(3, 584, 280, 32); add(3, 616, 280, 32); // block of 4
+  add(3, 350, 140, 26); add(3, 376, 140, 26); add(3, 402, 140, 26); add(3, 428, 140, 26); // block of 4
+  add(3, 60, 280, 28); add(3, 88, 280, 28); add(3, 116, 280, 28); add(3, 144, 280, 28); // cluster left
+  add(3, 280, 400, 26); add(3, 306, 400, 26); add(3, 332, 400, 26); add(3, 358, 400, 26); // cluster bottom
 
   // Room 4 – more blocks
-  add(4, 140, 100, 28); add(4, 168, 100, 28); add(4, 196, 100, 28); add(4, 224, 100, 28); // block of 4
-  add(4, 480, 160, 30); add(4, 510, 160, 30); add(4, 540, 160, 30); // block of 3
-  add(4, 100, 340, 26); add(4, 126, 340, 26); add(4, 152, 340, 26); add(4, 178, 340, 26); add(4, 204, 340, 26); // block of 5
-  add(4, 420, 320, 32); add(4, 452, 320, 32); // block of 2
-  add(4, 280, 220, 28); add(4, 308, 220, 28); add(4, 336, 220, 28); // block of 3
+  add(4, 140, 100, 28); add(4, 168, 100, 28); add(4, 196, 100, 28); add(4, 224, 100, 28); add(4, 252, 100, 28); add(4, 280, 100, 28); // block of 6
+  add(4, 480, 160, 30); add(4, 510, 160, 30); add(4, 540, 160, 30); add(4, 570, 160, 30); add(4, 600, 160, 30); // block of 5
+  add(4, 100, 340, 26); add(4, 126, 340, 26); add(4, 152, 340, 26); add(4, 178, 340, 26); add(4, 204, 340, 26); add(4, 230, 340, 26); // block of 6
+  add(4, 420, 320, 32); add(4, 452, 320, 32); add(4, 484, 320, 32); add(4, 516, 320, 32); // block of 4
+  add(4, 280, 220, 28); add(4, 308, 220, 28); add(4, 336, 220, 28); add(4, 364, 220, 28); add(4, 392, 220, 28); // block of 5
+  add(4, 80, 200, 26); add(4, 106, 200, 26); add(4, 132, 200, 26); add(4, 158, 200, 26); // cluster left
+  add(4, 560, 280, 28); add(4, 588, 280, 28); add(4, 616, 280, 28); // cluster right
 
   // Room 5
-  add(5, 80, 120, 30); add(5, 110, 120, 30); add(5, 140, 120, 30); add(5, 170, 120, 30); // block of 4
-  add(5, 560, 100, 26); add(5, 586, 100, 26); add(5, 612, 100, 26); // block of 3
-  add(5, 180, 360, 28); add(5, 208, 360, 28); add(5, 236, 360, 28); add(5, 264, 360, 28); add(5, 292, 360, 28); // block of 5
-  add(5, 400, 180, 32); add(5, 432, 180, 32); // block of 2
-  add(5, 320, 380, 26); add(5, 346, 380, 26); add(5, 372, 380, 26); // block of 3
+  add(5, 80, 120, 30); add(5, 110, 120, 30); add(5, 140, 120, 30); add(5, 170, 120, 30); add(5, 200, 120, 30); add(5, 230, 120, 30); // block of 6
+  add(5, 560, 100, 26); add(5, 586, 100, 26); add(5, 612, 100, 26); add(5, 638, 100, 26); // block of 4
+  add(5, 180, 360, 28); add(5, 208, 360, 28); add(5, 236, 360, 28); add(5, 264, 360, 28); add(5, 292, 360, 28); add(5, 320, 360, 28); // block of 6
+  add(5, 400, 180, 32); add(5, 432, 180, 32); add(5, 464, 180, 32); add(5, 496, 180, 32); // block of 4
+  add(5, 320, 380, 26); add(5, 346, 380, 26); add(5, 372, 380, 26); add(5, 398, 380, 26); add(5, 424, 380, 26); // block of 5
+  add(5, 60, 260, 28); add(5, 88, 260, 28); add(5, 116, 260, 28); add(5, 144, 260, 28); // cluster left
+  add(5, 260, 60, 26); add(5, 286, 60, 26); add(5, 312, 60, 26); add(5, 338, 60, 26); add(5, 364, 60, 26); // cluster top
 
   // Room 6
-  add(6, 100, 80, 28); add(6, 128, 80, 28); add(6, 156, 80, 28); add(6, 184, 80, 28); add(6, 212, 80, 28); // block of 5
+  add(6, 100, 80, 28); add(6, 128, 80, 28); add(6, 156, 80, 28); add(6, 184, 80, 28); add(6, 212, 80, 28); add(6, 240, 80, 28); // block of 6
   add(6, 520, 140, 30); add(6, 550, 140, 30); add(6, 580, 140, 30); add(6, 610, 140, 30); // block of 4
-  add(6, 140, 380, 26); add(6, 166, 380, 26); add(6, 192, 380, 26); // block of 3
-  add(6, 440, 340, 32); add(6, 472, 340, 32); // block of 2
-  add(6, 340, 260, 28); add(6, 368, 260, 28); add(6, 396, 260, 28); // block of 3
+  add(6, 140, 380, 26); add(6, 166, 380, 26); add(6, 192, 380, 26); add(6, 218, 380, 26); add(6, 244, 380, 26); add(6, 270, 380, 26); // block of 6
+  add(6, 440, 340, 32); add(6, 472, 340, 32); add(6, 504, 340, 32); add(6, 536, 340, 32); add(6, 568, 340, 32); // block of 5
+  add(6, 340, 260, 28); add(6, 368, 260, 28); add(6, 396, 260, 28); add(6, 424, 260, 28); add(6, 452, 260, 28); // block of 5
+  add(6, 80, 200, 26); add(6, 106, 200, 26); add(6, 132, 200, 26); add(6, 158, 200, 26); add(6, 184, 200, 26); // cluster left
+  add(6, 580, 300, 28); add(6, 608, 300, 28); add(6, 636, 300, 28); // cluster right
+  add(6, 260, 60, 26); add(6, 286, 60, 26); add(6, 312, 60, 26); add(6, 338, 60, 26); // cluster top
 
-  // Room 7
-  add(7, 120, 180, 30); add(7, 150, 180, 30); add(7, 180, 180, 30); add(7, 210, 180, 30); // block of 4
-  add(7, 380, 100, 26); add(7, 406, 100, 26); add(7, 432, 100, 26); add(7, 458, 100, 26); add(7, 484, 100, 26); // block of 5
-  add(7, 200, 360, 28); add(7, 228, 360, 28); add(7, 256, 360, 28); // block of 3
-  add(7, 500, 300, 32); add(7, 532, 300, 32); add(7, 564, 300, 32); // block of 3
-  add(7, 320, 140, 26); add(7, 346, 140, 26); // block of 2
+  // Room 7 = BOSS_ROOM: no blocks
 }
 
 let player = new Player(
@@ -422,59 +508,85 @@ let hasStarted = false; // becomes true after first start
 function setupEnemies() {
   enemies = [];
 
-  // Room 0 – 4 enemies (spawn away from right/down doors so player has space when entering)
+  // Room 0 – 8 enemies
   enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 140, 0));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 160, 0));
   enemies.push(new Enemy(ROOM_MARGIN_X + 180, ROOM_MARGIN_Y + 300, 0));
   enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 300, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 200, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 260, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 180, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 220, 0));
 
-  // Room 1 – 4 enemies
+  // Room 1 – 8 enemies
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 1));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 160, 1));
   enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 1));
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 280, 1));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 220, 1));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 140, 1));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 240, 1));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 200, 1));
 
-  // Room 2 – 4 enemies (this room’s demons also throw slow fireballs)
+  // Room 2 – 8 enemies (this room’s demons also throw slow fireballs)
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 2));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 200, 2));
   enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 2));
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 300, 2));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 240, 2));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 140, 2));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 260, 2));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 180, 2));
 
-  // Room 3 – 4 enemies
+  // Room 3 – 8 enemies
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 220, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 160, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 280, 3));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 240, 3));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 200, 3));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 220, 3));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 260, 3));
 
-  // Rooms 4–7 – 4 elite demons each (twice as big, twice as strong)
+  // Rooms 4–6 – 8 elite demons each (twice as big, twice as strong)
   enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 160, 4, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 180, 4, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 300, 4, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 300, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 220, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 140, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 260, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 240, 4, true));
 
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 5, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 180, 5, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 5, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 280, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 240, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 120, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 220, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 260, 5, true));
 
   enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 180, 6, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 200, 6, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 6, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 300, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 240, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 160, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 220, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 260, 6, true));
 
-  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 200, 7, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 220, 7, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 160, 7, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 280, 7, true));
+  // Room 7: BOSS only (no regular enemies), center of room, no blocks in this room
+  enemies.push(new Boss(ROOM_MARGIN_X + ROOM_WIDTH / 2, ROOM_MARGIN_Y + ROOM_HEIGHT / 2, BOSS_ROOM));
 }
 
-// Room-local positions for "far side" of room (opposite the door the player entered). Four slots per entry door.
+// Room-local positions for "far side" of room (opposite the door the player entered). Five slots per entry for 4–6 enemies.
 function getFarSideSlots(entryDoor) {
   const slots = {
-    right: [{ lx: 120, ly: 140 }, { lx: 120, ly: 320 }, { lx: 220, ly: 180 }, { lx: 220, ly: 300 }],   // far = left half
-    left:  [{ lx: 520, ly: 140 }, { lx: 520, ly: 320 }, { lx: 420, ly: 180 }, { lx: 420, ly: 300 }],   // far = right half
-    bottom:[{ lx: 140, ly: 100 }, { lx: 340, ly: 100 }, { lx: 500, ly: 180 }, { lx: 180, ly: 200 }],   // far = top half
-    top:   [{ lx: 140, ly: 380 }, { lx: 340, ly: 380 }, { lx: 500, ly: 300 }, { lx: 180, ly: 280 }],   // far = bottom half
+    right: [{ lx: 100, ly: 120 }, { lx: 100, ly: 240 }, { lx: 100, ly: 360 }, { lx: 200, ly: 180 }, { lx: 200, ly: 300 }],
+    left:  [{ lx: 540, ly: 120 }, { lx: 540, ly: 240 }, { lx: 540, ly: 360 }, { lx: 440, ly: 180 }, { lx: 440, ly: 300 }],
+    bottom:[{ lx: 120, ly: 80 }, { lx: 280, ly: 80 }, { lx: 440, ly: 80 }, { lx: 200, ly: 160 }, { lx: 400, ly: 160 }],
+    top:   [{ lx: 120, ly: 400 }, { lx: 280, ly: 400 }, { lx: 440, ly: 400 }, { lx: 200, ly: 320 }, { lx: 400, ly: 320 }],
   };
   return (slots[entryDoor] || slots.right).slice();
 }
@@ -483,15 +595,55 @@ function repositionEnemiesToFarSide(roomId, entryDoor) {
   const roomEnemies = enemies.filter((e) => e.roomId === roomId && e.hp > 0);
   if (roomEnemies.length === 0) return;
   const slots = getFarSideSlots(entryDoor);
-  // Shuffle slots so enemy positions vary
   for (let i = slots.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [slots[i], slots[j]] = [slots[j], slots[i]];
   }
-  roomEnemies.forEach((e, i) => {
-    const s = slots[i % slots.length];
-    e.x = ROOM_MARGIN_X + s.lx;
-    e.y = ROOM_MARGIN_Y + s.ly;
+  const used = new Set();
+  roomEnemies.forEach((e, idx) => {
+    let wx = 0, wy = 0;
+    let found = false;
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      const key = `${s.lx},${s.ly}`;
+      wx = ROOM_MARGIN_X + s.lx;
+      wy = ROOM_MARGIN_Y + s.ly;
+      const slotFree = !used.has(key) && !positionOverlapsObstacle(roomId, wx, wy, e.half);
+      if (slotFree) {
+        used.add(key);
+        found = true;
+        break;
+      }
+      if (!positionOverlapsObstacle(roomId, wx, wy, e.half)) {
+        used.add(key);
+        found = true;
+        break;
+      }
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const offX = (Math.random() - 0.5) * 100;
+        const offY = (Math.random() - 0.5) * 100;
+        const nx = wx + offX, ny = wy + offY;
+        const inRoom = nx >= ROOM_MARGIN_X + e.half && nx <= ROOM_MARGIN_X + ROOM_WIDTH - e.half &&
+          ny >= ROOM_MARGIN_Y + e.half && ny <= ROOM_MARGIN_Y + ROOM_HEIGHT - e.half;
+        if (inRoom && !positionOverlapsObstacle(roomId, nx, ny, e.half)) {
+          wx = nx; wy = ny;
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    // If no slot worked, spread in a grid so we never stack all on one spot
+    if (!found) {
+      const cols = 3;
+      const row = Math.floor(idx / cols), col = idx % cols;
+      wx = ROOM_MARGIN_X + 120 + col * 180 + (e.half * 2);
+      wy = ROOM_MARGIN_Y + 120 + row * 120 + (e.half * 2);
+      wx = Math.min(wx, ROOM_MARGIN_X + ROOM_WIDTH - e.half - 10);
+      wy = Math.min(wy, ROOM_MARGIN_Y + ROOM_HEIGHT - e.half - 10);
+    }
+    e.x = wx;
+    e.y = wy;
   });
 }
 
@@ -704,12 +856,34 @@ function performSwordAttack() {
 }
 
 function updatePlayerMovement() {
-  // Apply knockback first (slower, over multiple frames)
+  // Apply knockback first (slower, over multiple frames). Never allow ending inside a block.
   if (player.knockbackRemaining > 0) {
     const move = Math.min(KNOCKBACK_SPEED_PER_FRAME, player.knockbackRemaining);
     player.x += player.knockbackNx * move;
     player.y += player.knockbackNy * move;
     player.knockbackRemaining -= move;
+    player.x = clamp(
+      player.x,
+      ROOM_MARGIN_X + player.boundsHalfW,
+      ROOM_MARGIN_X + ROOM_WIDTH - player.boundsHalfW
+    );
+    player.y = clamp(
+      player.y,
+      ROOM_MARGIN_Y + player.boundsHalfH,
+      ROOM_MARGIN_Y + ROOM_HEIGHT - player.boundsHalfH
+    );
+    // Resolve any overlap with obstacles so the player never ends up inside a block
+    const obstacles = roomObstacles.get(player.currentRoom) || [];
+    for (let i = 0; i < 10; i++) {
+      let resolved = false;
+      for (const ob of obstacles) {
+        if (rectIntersect(player, ob)) {
+          resolvePlayerObstacle(player, ob);
+          resolved = true;
+        }
+      }
+      if (!resolved) break;
+    }
     player.x = clamp(
       player.x,
       ROOM_MARGIN_X + player.boundsHalfW,
@@ -801,6 +975,10 @@ function updatePlayerMovement() {
   );
 }
 
+function allNonBossEnemiesDead() {
+  return enemies.every((e) => e.roomId === BOSS_ROOM || e.hp <= 0);
+}
+
 function handleRoomTransitions() {
   const room = ROOMS[player.currentRoom];
 
@@ -811,52 +989,59 @@ function handleRoomTransitions() {
 
   const doorThickness = 60; // vertical extent for side doors, horizontal for top/bottom
 
+  // Boss room (7) is only enterable when all other enemies are dead
+  const canEnterBossRoom = (newRoomId) => newRoomId !== BOSS_ROOM || allNonBossEnemiesDead();
+
   // Left door (exit current room left -> enter new room through its right door)
   if (
     room.neighbors.left !== undefined &&
+    canEnterBossRoom(room.neighbors.left) &&
     player.x - player.boundsHalfW <= ROOM_MARGIN_X + 4 &&
     Math.abs(player.y - leftDoorY) <= doorThickness / 2
   ) {
     player.currentRoom = room.neighbors.left;
     player.x = ROOM_MARGIN_X + ROOM_WIDTH - player.boundsHalfW - 10;
     player.y = leftDoorY;
-    repositionEnemiesToFarSide(player.currentRoom, "right");
+    if (player.currentRoom !== BOSS_ROOM) repositionEnemiesToFarSide(player.currentRoom, "right");
   }
 
   // Right door (enter new room through its left door)
   if (
     room.neighbors.right !== undefined &&
+    canEnterBossRoom(room.neighbors.right) &&
     player.x + player.boundsHalfW >= ROOM_MARGIN_X + ROOM_WIDTH - 4 &&
     Math.abs(player.y - rightDoorY) <= doorThickness / 2
   ) {
     player.currentRoom = room.neighbors.right;
     player.x = ROOM_MARGIN_X + player.boundsHalfW + 10;
     player.y = rightDoorY;
-    repositionEnemiesToFarSide(player.currentRoom, "left");
+    if (player.currentRoom !== BOSS_ROOM) repositionEnemiesToFarSide(player.currentRoom, "left");
   }
 
   // Top door (enter new room through its bottom door)
   if (
     room.neighbors.up !== undefined &&
+    canEnterBossRoom(room.neighbors.up) &&
     player.y - player.boundsHalfH <= ROOM_MARGIN_Y + 4 &&
     Math.abs(player.x - topDoorX) <= doorThickness / 2
   ) {
     player.currentRoom = room.neighbors.up;
     player.y = ROOM_MARGIN_Y + ROOM_HEIGHT - player.boundsHalfH - 10;
     player.x = topDoorX;
-    repositionEnemiesToFarSide(player.currentRoom, "bottom");
+    if (player.currentRoom !== BOSS_ROOM) repositionEnemiesToFarSide(player.currentRoom, "bottom");
   }
 
   // Bottom door (enter new room through its top door)
   if (
     room.neighbors.down !== undefined &&
+    canEnterBossRoom(room.neighbors.down) &&
     player.y + player.boundsHalfH >= ROOM_MARGIN_Y + ROOM_HEIGHT - 4 &&
     Math.abs(player.x - bottomDoorX) <= doorThickness / 2
   ) {
     player.currentRoom = room.neighbors.down;
     player.y = ROOM_MARGIN_Y + player.boundsHalfH + 10;
     player.x = bottomDoorX;
-    repositionEnemiesToFarSide(player.currentRoom, "top");
+    if (player.currentRoom !== BOSS_ROOM) repositionEnemiesToFarSide(player.currentRoom, "top");
   }
 }
 
@@ -886,9 +1071,10 @@ function updateEnemies() {
     const dx = player.x - enemy.x;
     const dy = player.y - enemy.y;
     const dist = Math.hypot(dx, dy);
+    const speed = enemy.speed !== undefined ? enemy.speed : ENEMY_SPEED;
     if (dist > 4) {
-      const vx = (dx / dist) * ENEMY_SPEED;
-      const vy = (dy / dist) * ENEMY_SPEED;
+      const vx = (dx / dist) * speed;
+      const vy = (dy / dist) * speed;
       const obstacles = roomObstacles.get(enemy.roomId) || [];
 
       const oldX = enemy.x;
@@ -910,8 +1096,32 @@ function updateEnemies() {
       }
     }
 
+    // Boss: shoot 3 fireballs in a fan (like hero)
+    if (enemy.isBoss && enemy.fireballCooldown <= 0) {
+      const baseAngle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+      const spread = Math.PI / 18;
+      const angles = [baseAngle - spread, baseAngle, baseAngle + spread];
+      angles.forEach((angle) => {
+        const vx = Math.cos(angle) * FIREBALL_SPEED;
+        const vy = Math.sin(angle) * FIREBALL_SPEED;
+        const startX = enemy.x + Math.cos(angle) * (enemy.half + FIREBALL_SIZE);
+        const startY = enemy.y + Math.sin(angle) * (enemy.half + FIREBALL_SIZE);
+        enemyProjectiles.push({
+          x: startX,
+          y: startY,
+          vx,
+          vy,
+          roomId: enemy.roomId,
+          size: FIREBALL_SIZE,
+          damage: BOSS_FIREBALL_DAMAGE,
+          alive: true,
+          get half() { return this.size / 2; },
+        });
+      });
+      enemy.fireballCooldown = BOSS_FIREBALL_COOLDOWN;
+    }
     // In the “fireball room”, demons periodically shoot a slow fireball at the player
-    if (
+    else if (
       enemy.roomId === ROOM_DEMONS_SHOOT_FIREBALLS &&
       enemy.roomId === player.currentRoom &&
       enemy.fireballCooldown <= 0
@@ -930,6 +1140,7 @@ function updateEnemies() {
         vy,
         roomId: enemy.roomId,
         size: ENEMY_FIREBALL_SIZE,
+        damage: ENEMY_FIREBALL_DAMAGE,
         alive: true,
         get half() { return this.size / 2; },
       });
@@ -937,9 +1148,9 @@ function updateEnemies() {
     }
     if (enemy.fireballCooldown > 0) enemy.fireballCooldown--;
 
-    // Damage player on contact and start knockback (applied over frames)
+    // Damage player on contact and start knockback (applied over frames). Always 1 heart per contact.
     if (rectIntersect(enemy, player)) {
-      player.hp = Math.max(0, player.hp - enemy.damage);
+      player.hp = Math.max(0, player.hp - 1);
 
       let kdx = player.x - enemy.x;
       let kdy = player.y - enemy.y;
@@ -1014,7 +1225,7 @@ function updateEnemyProjectiles() {
       }
     }
     if (rectIntersect(p, player) && player.currentRoom === p.roomId) {
-      player.hp = Math.max(0, player.hp - ENEMY_FIREBALL_DAMAGE);
+      player.hp = Math.max(0, player.hp - 1);  // always 1 heart per enemy fireball hit
       p.alive = false;
       if (player.hp <= 0) {
         isGameOver = true;
@@ -1037,7 +1248,7 @@ function checkWinCondition() {
 
 function showEndMessage() {
   messageTextEl.textContent = victory
-    ? "You defeated all the demons!"
+    ? "You defeated all the demons and the Boss!"
     : "You lose";
   restartButton.textContent = "Restart";
   overlayEl.classList.remove("hidden");
