@@ -147,6 +147,7 @@ class Player extends Entity {
     this.knockbackRemaining = 0;
     this.knockbackNx = 0;
     this.knockbackNy = 0;
+    this.contactDamageCooldown = 0;  // frames until next contact can deal 1 heart (prevents multi-enemy stack from one-shotting)
   }
 
   reset(x, y, roomId) {
@@ -161,6 +162,7 @@ class Player extends Entity {
     this.knockbackRemaining = 0;
     this.knockbackNx = 0;
     this.knockbackNy = 0;
+    this.contactDamageCooldown = 0;
   }
 }
 
@@ -381,13 +383,13 @@ const FAR_SIDE_SLOTS_ALL = [
 ].map((p) => ({ ...p, r: SPAWN_ZONE_R }));
 
 const SPAWN_ZONES = new Map([
-  [0, [{ x: 320, y: 240, r: 75 }, { x: 200, y: 140, r: SPAWN_ZONE_R }, { x: 400, y: 160, r: SPAWN_ZONE_R }, { x: 180, y: 300, r: SPAWN_ZONE_R }, { x: 420, y: 300, r: SPAWN_ZONE_R }, { x: 260, y: 200, r: SPAWN_ZONE_R }, { x: 320, y: 260, r: SPAWN_ZONE_R }, { x: 240, y: 180, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
-  [1, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 160, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 280, r: SPAWN_ZONE_R }, { x: 300, y: 220, r: SPAWN_ZONE_R }, { x: 340, y: 140, r: SPAWN_ZONE_R }, { x: 260, y: 240, r: SPAWN_ZONE_R }, { x: 360, y: 200, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
-  [2, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 200, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 300, r: SPAWN_ZONE_R }, { x: 320, y: 240, r: SPAWN_ZONE_R }, { x: 280, y: 140, r: SPAWN_ZONE_R }, { x: 300, y: 260, r: SPAWN_ZONE_R }, { x: 360, y: 180, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
-  [3, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 420, y: 220, r: SPAWN_ZONE_R }, { x: 320, y: 160, r: SPAWN_ZONE_R }, { x: 340, y: 280, r: SPAWN_ZONE_R }, { x: 260, y: 240, r: SPAWN_ZONE_R }, { x: 380, y: 200, r: SPAWN_ZONE_R }, { x: 280, y: 220, r: SPAWN_ZONE_R }, { x: 360, y: 260, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
-  [4, [{ x: 200, y: 160, r: SPAWN_ZONE_R }, { x: 400, y: 180, r: SPAWN_ZONE_R }, { x: 200, y: 300, r: SPAWN_ZONE_R }, { x: 400, y: 300, r: SPAWN_ZONE_R }, { x: 280, y: 220, r: SPAWN_ZONE_R }, { x: 320, y: 140, r: SPAWN_ZONE_R }, { x: 240, y: 260, r: SPAWN_ZONE_R }, { x: 360, y: 240, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
-  [5, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 180, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 280, r: SPAWN_ZONE_R }, { x: 300, y: 240, r: SPAWN_ZONE_R }, { x: 340, y: 120, r: SPAWN_ZONE_R }, { x: 260, y: 220, r: SPAWN_ZONE_R }, { x: 360, y: 260, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
-  [6, [{ x: 200, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 200, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 300, r: SPAWN_ZONE_R }, { x: 280, y: 240, r: SPAWN_ZONE_R }, { x: 320, y: 160, r: SPAWN_ZONE_R }, { x: 260, y: 220, r: SPAWN_ZONE_R }, { x: 360, y: 260, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [0, [{ x: 320, y: 240, r: 75 }, { x: 200, y: 140, r: SPAWN_ZONE_R }, { x: 400, y: 160, r: SPAWN_ZONE_R }, { x: 180, y: 300, r: SPAWN_ZONE_R }, { x: 420, y: 300, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [1, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 160, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 280, r: SPAWN_ZONE_R }, { x: 300, y: 220, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [2, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 200, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 300, r: SPAWN_ZONE_R }, { x: 320, y: 240, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [3, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 420, y: 220, r: SPAWN_ZONE_R }, { x: 320, y: 160, r: SPAWN_ZONE_R }, { x: 340, y: 280, r: SPAWN_ZONE_R }, { x: 260, y: 240, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [4, [{ x: 200, y: 160, r: SPAWN_ZONE_R }, { x: 400, y: 180, r: SPAWN_ZONE_R }, { x: 200, y: 300, r: SPAWN_ZONE_R }, { x: 400, y: 300, r: SPAWN_ZONE_R }, { x: 280, y: 220, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [5, [{ x: 220, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 180, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 280, r: SPAWN_ZONE_R }, { x: 300, y: 240, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
+  [6, [{ x: 200, y: 180, r: SPAWN_ZONE_R }, { x: 400, y: 200, r: SPAWN_ZONE_R }, { x: 240, y: 300, r: SPAWN_ZONE_R }, { x: 380, y: 300, r: SPAWN_ZONE_R }, { x: 280, y: 240, r: SPAWN_ZONE_R }, ...FAR_SIDE_SLOTS_ALL]],
   [7, [{ x: 320, y: 240, r: SPAWN_ZONE_R }]], // boss room: only center spawn zone (no blocks)
 ]);
 
@@ -501,6 +503,7 @@ let projectiles = [];
 let enemyProjectiles = []; // slow fireballs thrown by demons in one room
 let explosions = []; // fireball impact effects
 let deathScatterParticles = []; // enemy sword-death scatter pieces
+let heartPickups = []; // { x, y, roomId } — red hearts from dead enemies, +1 HP when collected
 let isGameOver = false;
 let victory = false;
 let hasStarted = false; // becomes true after first start
@@ -508,55 +511,44 @@ let hasStarted = false; // becomes true after first start
 function setupEnemies() {
   enemies = [];
 
-  // Room 0 – 8 enemies
+  // Room 0 – 5 enemies
   enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 140, 0));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 160, 0));
   enemies.push(new Enemy(ROOM_MARGIN_X + 180, ROOM_MARGIN_Y + 300, 0));
   enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 300, 0));
   enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 200, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 260, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 180, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 220, 0));
 
-  // Room 1 – 8 enemies
+  // Room 1 – 5 enemies
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 1));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 160, 1));
   enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 1));
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 280, 1));
   enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 220, 1));
   enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 140, 1));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 240, 1));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 200, 1));
 
-  // Room 2 – 8 enemies (this room’s demons also throw slow fireballs)
+  // Room 2 – 5 enemies (this room’s demons also throw slow fireballs)
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 2));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 200, 2));
   enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 2));
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 300, 2));
   enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 240, 2));
   enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 140, 2));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 260, 2));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 180, 2));
 
-  // Room 3 – 8 enemies
+  // Room 3 – 5 enemies
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 220, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 160, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 280, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 240, 3));
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 200, 3));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 220, 3));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 260, 3));
 
-  // Rooms 4–6 – 8 elite demons each (twice as big, twice as strong)
+  // Rooms 4–6 – 5 elite demons each (twice as big, twice as strong)
   enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 160, 4, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 180, 4, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 300, 4, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 300, 4, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 220, 4, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 140, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 260, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 240, 4, true));
 
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 5, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 180, 5, true));
@@ -564,8 +556,6 @@ function setupEnemies() {
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 280, 5, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 240, 5, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 120, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 220, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 260, 5, true));
 
   enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 180, 6, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 200, 6, true));
@@ -573,8 +563,6 @@ function setupEnemies() {
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 300, 6, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 240, 6, true));
   enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 160, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 220, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 260, 6, true));
 
   // Room 7: BOSS only (no regular enemies), center of room, no blocks in this room
   enemies.push(new Boss(ROOM_MARGIN_X + ROOM_WIDTH / 2, ROOM_MARGIN_Y + ROOM_HEIGHT / 2, BOSS_ROOM));
@@ -653,8 +641,7 @@ function resetGame() {
   const startX = ROOM_MARGIN_X + ROOM_WIDTH / 2;
   const startY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
   player.reset(startX, startY, 0);
-  // Room 0: place enemies on far side from right/bottom (where player typically heads first)
-  repositionEnemiesToFarSide(0, "right");
+  // Enemies keep their initial positions from setupEnemies (no repositioning) so 5 stay visible per room
   projectiles = [];
   enemyProjectiles = [];
   deathScatterParticles = [];
@@ -662,6 +649,21 @@ function resetGame() {
   victory = false;
   overlayEl.classList.add("hidden");
   updateHUD();
+}
+
+const HEART_PICKUP_R = 14; // touch radius for collecting a heart
+
+function spawnHeartPickups(x, y, roomId, count) {
+  if (count <= 0) return;
+  const spacing = 22;
+  const startX = x - ((count - 1) * spacing) / 2;
+  for (let i = 0; i < count; i++) {
+    heartPickups.push({
+      x: startX + i * spacing,
+      y,
+      roomId,
+    });
+  }
 }
 
 function spawnDeathScatter(x, y, roomId) {
@@ -850,6 +852,10 @@ function performSwordAttack() {
       enemy.hitFlashTimer = 6;
       if (enemy.hp <= 0) {
         spawnDeathScatter(enemy.x, enemy.y, enemy.roomId);
+        if (!enemy.isBoss) {
+          const count = enemy.size === ENEMY_ELITE_SIZE ? 2 : 1;
+          spawnHeartPickups(enemy.x, enemy.y, enemy.roomId, count);
+        }
       }
     }
   });
@@ -1002,7 +1008,6 @@ function handleRoomTransitions() {
     player.currentRoom = room.neighbors.left;
     player.x = ROOM_MARGIN_X + ROOM_WIDTH - player.boundsHalfW - 10;
     player.y = leftDoorY;
-    if (player.currentRoom !== BOSS_ROOM) repositionEnemiesToFarSide(player.currentRoom, "right");
   }
 
   // Right door (enter new room through its left door)
@@ -1015,7 +1020,6 @@ function handleRoomTransitions() {
     player.currentRoom = room.neighbors.right;
     player.x = ROOM_MARGIN_X + player.boundsHalfW + 10;
     player.y = rightDoorY;
-    if (player.currentRoom !== BOSS_ROOM) repositionEnemiesToFarSide(player.currentRoom, "left");
   }
 
   // Top door (enter new room through its bottom door)
@@ -1028,7 +1032,6 @@ function handleRoomTransitions() {
     player.currentRoom = room.neighbors.up;
     player.y = ROOM_MARGIN_Y + ROOM_HEIGHT - player.boundsHalfH - 10;
     player.x = topDoorX;
-    if (player.currentRoom !== BOSS_ROOM) repositionEnemiesToFarSide(player.currentRoom, "bottom");
   }
 
   // Bottom door (enter new room through its top door)
@@ -1041,7 +1044,6 @@ function handleRoomTransitions() {
     player.currentRoom = room.neighbors.down;
     player.y = ROOM_MARGIN_Y + player.boundsHalfH + 10;
     player.x = bottomDoorX;
-    if (player.currentRoom !== BOSS_ROOM) repositionEnemiesToFarSide(player.currentRoom, "top");
   }
 }
 
@@ -1148,9 +1150,12 @@ function updateEnemies() {
     }
     if (enemy.fireballCooldown > 0) enemy.fireballCooldown--;
 
-    // Damage player on contact and start knockback (applied over frames). Always 1 heart per contact.
+    // Damage player on contact and start knockback. Always 1 heart per contact; cooldown prevents stacked enemies from multi-hit.
     if (rectIntersect(enemy, player)) {
-      player.hp = Math.max(0, player.hp - 1);
+      if (player.contactDamageCooldown <= 0) {
+        player.hp = Math.max(0, player.hp - 1);
+        player.contactDamageCooldown = 45;  // ~0.75 sec before next contact can damage
+      }
 
       let kdx = player.x - enemy.x;
       let kdy = player.y - enemy.y;
@@ -1196,6 +1201,13 @@ function updateProjectiles() {
         enemy.hitFlashTimer = 6;
         p.alive = false;
         spawnExplosion(p.x, p.y);
+        if (enemy.hp <= 0) {
+          spawnDeathScatter(enemy.x, enemy.y, enemy.roomId);
+          if (!enemy.isBoss) {
+            const count = enemy.size === ENEMY_ELITE_SIZE ? 2 : 1;
+            spawnHeartPickups(enemy.x, enemy.y, enemy.roomId, count);
+          }
+        }
       }
     });
   });
@@ -1437,6 +1449,7 @@ function gameLoop() {
 
   if (!isGameOver && hasStarted) {
     if (player.attackCooldown > 0) player.attackCooldown--;
+    if (player.contactDamageCooldown > 0) player.contactDamageCooldown--;
     if (player.swordSwingTimer > 0) player.swordSwingTimer--;
     // Update hero walk animation
     if (heroAnim.moving) {
