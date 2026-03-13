@@ -33,6 +33,7 @@ const ENEMY_ELITE_SIZE = 48;   // twice as big
 const ENEMY_ELITE_HP = 20;     // twice as strong (HP)
 const ENEMY_ELITE_DAMAGE = 1;  // 1 heart on contact (same as normal)
 const ENEMY_SPEED = 1.0;
+const SMALL_ENEMY_SPEED = ENEMY_SPEED * 2.5; // fast movers for small enemies
 const ROOM_DEMONS_SHOOT_FIREBALLS = 2; // room index where demons throw slow fireballs
 const ENEMY_FIREBALL_SPEED = 1.2;
 const ENEMY_FIREBALL_COOLDOWN = 90;   // frames between shots per demon
@@ -40,17 +41,19 @@ const ENEMY_FIREBALL_SIZE = 8;
 const ENEMY_FIREBALL_DAMAGE = 1;
 
 const BOSS_ROOM = 7;  // room furthest from spawn; only enterable when all other enemies dead; exactly 1 enemy (the boss)
-const BOSS_SIZE = ENEMY_SIZE * 8;   // 8 blocks large (1 block = base enemy size)
+const BOSS_SIZE = ENEMY_ELITE_SIZE;   // half of previous size (same as elite)
 const BOSS_HP = 50;
 const BOSS_DAMAGE = 1;  // 1 heart on contact
-const BOSS_SPEED = ENEMY_SPEED * 0.5;     // half as fast
-const BOSS_FIREBALL_COOLDOWN = 100;        // frames between 3-shot volleys
+const BOSS_SPEED = ENEMY_SPEED * 1.5;     // bounces faster than normal demons
+const BOSS_FIREBALL_COOLDOWN = 100;        // frames between shots
 
 const FIREBALL_SPEED = 5;
 const FIREBALL_SIZE = 10;
 // Damage values & sword geometry
 const FIREBALL_DAMAGE = 5; // each fireball hit
 const BOSS_FIREBALL_DAMAGE = 1;  // 1 heart when boss fireball hits player
+const BOSS_FIREBALL_SPEED = FIREBALL_SPEED * 0.5; // boss fireball moves half as fast as hero fireball
+const BOSS_FIREBALL_SIZE = FIREBALL_SIZE * 2;     // large boss fireball
 const SWORD_DAMAGE = 15;   // each sword hit (50% stronger than base)
 const SWORD_RANGE = PLAYER_SIZE * 3; // sword length (50% longer: 3× player size)
 const SWORD_ARC = Math.PI / 2;   // 180° total swing (±90° from facing)
@@ -175,7 +178,10 @@ class Enemy extends Entity {
     const size = isElite ? ENEMY_ELITE_SIZE : ENEMY_SIZE;
     const maxHp = isElite ? ENEMY_ELITE_HP : ENEMY_MAX_HP;
     super(x, y, size, isElite ? "#8b0000" : "#e53935");
+    this.spawnX = x;
+    this.spawnY = y;
     this.hp = maxHp;
+    this.isElite = isElite;
     this.roomId = roomId;
     this.damage = isElite ? ENEMY_ELITE_DAMAGE : 1;
     this.hitFlashTimer = 0;
@@ -185,6 +191,12 @@ class Enemy extends Entity {
     this.fireballCooldown = 0; // used in room where demons shoot
     this.dropsHearts = false;  // two enemies per room set in setupEnemies
     this.dropsCoins = false;   // two enemies per room set in setupEnemies
+    // Small (non-elite) enemies move fast in straight lines and bounce
+    if (!isElite) {
+      const angle = Math.random() * Math.PI * 2;
+      this.vx = Math.cos(angle) * SMALL_ENEMY_SPEED;
+      this.vy = Math.sin(angle) * SMALL_ENEMY_SPEED;
+    }
   }
 
   draw() {
@@ -207,6 +219,8 @@ class Boss extends Entity {
   constructor(x, y, roomId) {
     super(x, y, BOSS_SIZE, "#2a0000");
     this.hp = BOSS_HP;
+    this.spawnX = x;
+    this.spawnY = y;
     this.roomId = roomId;
     this.damage = BOSS_DAMAGE;
     this.isBoss = true;
@@ -216,6 +230,10 @@ class Boss extends Entity {
     this.knockbackNy = 0;
     this.fireballCooldown = 0;
     this.speed = BOSS_SPEED;
+    // Bounce movement: start with a random direction
+    const angle = Math.random() * Math.PI * 2;
+    this.vx = Math.cos(angle) * this.speed;
+    this.vy = Math.sin(angle) * this.speed;
   }
 
   draw() {
@@ -514,7 +532,7 @@ function setupRoomObstacles() {
 }
 
 let player = new Player(
-  ROOM_MARGIN_X + ROOM_WIDTH / 2,
+  ROOM_MARGIN_X + 90,
   ROOM_MARGIN_Y + ROOM_HEIGHT / 2
 );
 
@@ -544,11 +562,13 @@ function setupEnemies() {
   enemies = [];
 
   // Room 0 – 5 enemies
-  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 140, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 160, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 180, ROOM_MARGIN_Y + 300, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 300, 0));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 260, ROOM_MARGIN_Y + 200, 0));
+  // Player now starts on the left side of room 0, so enemies are placed in fixed positions
+  // spread across the center and right side to avoid surrounding the spawn.
+  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 140, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 480, ROOM_MARGIN_Y + 160, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 360, ROOM_MARGIN_Y + 320, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 480, ROOM_MARGIN_Y + 320, 0));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 230, 0));
 
   // Room 1 – 5 enemies
   enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 1));
@@ -575,26 +595,30 @@ function setupEnemies() {
   enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 200, 3));
 
   // Rooms 4–6 – 5 elite demons each (twice as big, twice as strong)
-  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 160, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 180, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 300, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 300, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 220, 4, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 140, 4, true));
+  // Place elite demons away from door centers so they don't immediately shove the player on entry.
+  // Room 4 elites – clustered toward corners and mid-sides
+  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 120, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 520, ROOM_MARGIN_Y + 120, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 360, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 520, ROOM_MARGIN_Y + 360, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 260, 4, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 220, 4, true));
 
-  enemies.push(new Enemy(ROOM_MARGIN_X + 220, ROOM_MARGIN_Y + 180, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 180, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 280, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 300, ROOM_MARGIN_Y + 240, 5, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 340, ROOM_MARGIN_Y + 120, 5, true));
+  // Room 5 elites – scattered in a ring around the room
+  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 140, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 520, ROOM_MARGIN_Y + 140, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 340, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 520, ROOM_MARGIN_Y + 340, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 120, 5, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 360, 5, true));
 
-  enemies.push(new Enemy(ROOM_MARGIN_X + 200, ROOM_MARGIN_Y + 180, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 400, ROOM_MARGIN_Y + 200, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 240, ROOM_MARGIN_Y + 300, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 380, ROOM_MARGIN_Y + 300, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 280, ROOM_MARGIN_Y + 240, 6, true));
-  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 160, 6, true));
+  // Room 6 elites – similar scattering, with none sitting directly on door lines
+  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 140, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 520, ROOM_MARGIN_Y + 140, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 160, ROOM_MARGIN_Y + 340, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 520, ROOM_MARGIN_Y + 340, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 320, ROOM_MARGIN_Y + 200, 6, true));
+  enemies.push(new Enemy(ROOM_MARGIN_X + 420, ROOM_MARGIN_Y + 280, 6, true));
 
   // Room 7: BOSS only (no regular enemies), center of room, no blocks in this room
   enemies.push(new Boss(ROOM_MARGIN_X + ROOM_WIDTH / 2, ROOM_MARGIN_Y + ROOM_HEIGHT / 2, BOSS_ROOM));
@@ -679,7 +703,7 @@ function repositionEnemiesToFarSide(roomId, entryDoor) {
 function resetGame() {
   setupRoomObstacles();
   setupEnemies();
-  const startX = ROOM_MARGIN_X + ROOM_WIDTH / 2;
+  const startX = ROOM_MARGIN_X + 90;
   const startY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
   player.reset(startX, startY, 0);
   // Enemies keep their initial positions from setupEnemies (no repositioning) so 5 stay visible per room
@@ -791,6 +815,16 @@ function spawnExplosion(x, y) {
     y,
     radius: 4,
     maxRadius: 22,
+    alpha: 1.0,
+  });
+}
+
+function spawnBigExplosion(x, y) {
+  explosions.push({
+    x,
+    y,
+    radius: 10,
+    maxRadius: 48,
     alpha: 1.0,
   });
 }
@@ -1086,6 +1120,13 @@ function updateRoomTransition() {
       t.progress = 0;
       t.phase = 2;
       player.currentRoom = t.toRoom;
+      // Reset remaining enemies in this room back to their original spawn points
+      enemies.forEach((e) => {
+        if (e.roomId === t.toRoom && e.hp > 0 && e.spawnX !== undefined) {
+          e.x = e.spawnX;
+          e.y = e.spawnY;
+        }
+      });
       const midX = ROOM_MARGIN_X + ROOM_WIDTH / 2;
       const midY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
       if (t.direction === "left") {
@@ -1191,6 +1232,32 @@ function handleRoomTransitions() {
   }
 }
 
+function moveEnemyWithCollision(enemy, moveX, moveY, obstacles) {
+  if (moveX === 0 && moveY === 0) return;
+  // Move X with collision
+  if (moveX !== 0) {
+    const oldX = enemy.x;
+    enemy.x += moveX;
+    for (const ob of obstacles) {
+      if (rectIntersect(enemy, ob)) {
+        enemy.x = oldX;
+        break;
+      }
+    }
+  }
+  // Move Y with collision
+  if (moveY !== 0) {
+    const oldY = enemy.y;
+    enemy.y += moveY;
+    for (const ob of obstacles) {
+      if (rectIntersect(enemy, ob)) {
+        enemy.y = oldY;
+        break;
+      }
+    }
+  }
+}
+
 function updateEnemies() {
   enemies.forEach((enemy) => {
     if (enemy.hp <= 0 || enemy.roomId !== player.currentRoom) return;
@@ -1214,55 +1281,137 @@ function updateEnemies() {
       return;
     }
 
-    const dx = player.x - enemy.x;
-    const dy = player.y - enemy.y;
-    const dist = Math.hypot(dx, dy);
-    const speed = enemy.speed !== undefined ? enemy.speed : ENEMY_SPEED;
-    if (dist > 4) {
-      const vx = (dx / dist) * speed;
-      const vy = (dy / dist) * speed;
-      const obstacles = roomObstacles.get(enemy.roomId) || [];
+    const obstacles = roomObstacles.get(enemy.roomId) || [];
 
-      const oldX = enemy.x;
-      enemy.x += vx;
-      for (const ob of obstacles) {
-        if (rectIntersect(enemy, ob)) {
-          enemy.x = oldX;
-          break;
+    if (enemy.isBoss) {
+      // Boss: bounce around inside the boss room instead of chasing directly
+      const half = enemy.half;
+      // Predict next position
+      let nextX = enemy.x + enemy.vx;
+      let nextY = enemy.y + enemy.vy;
+
+      // Bounce on room walls (boss room has no obstacles)
+      if (
+        nextX - half < ROOM_MARGIN_X ||
+        nextX + half > ROOM_MARGIN_X + ROOM_WIDTH
+      ) {
+        enemy.vx = -enemy.vx;
+        nextX = enemy.x + enemy.vx;
+      }
+      if (
+        nextY - half < ROOM_MARGIN_Y ||
+        nextY + half > ROOM_MARGIN_Y + ROOM_HEIGHT
+      ) {
+        enemy.vy = -enemy.vy;
+        nextY = enemy.y + enemy.vy;
+      }
+
+      enemy.x = nextX;
+      enemy.y = nextY;
+    } else if (enemy.isElite) {
+      // Elite demons: keep wobble movement that tends toward the player
+      const speed = enemy.speed !== undefined ? enemy.speed : ENEMY_SPEED;
+      const subStep = speed / 3;
+      for (let i = 0; i < 3; i++) {
+        let dirX = 0;
+        let dirY = 0;
+        if (i === 0) {
+          // First step: random direction
+          const angle = Math.random() * Math.PI * 2;
+          dirX = Math.cos(angle);
+          dirY = Math.sin(angle);
+        } else {
+          // Next two steps: move toward the player
+          const dx = player.x - enemy.x;
+          const dy = player.y - enemy.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist <= 4) break;
+          dirX = dx / dist;
+          dirY = dy / dist;
+        }
+        moveEnemyWithCollision(enemy, dirX * subStep, dirY * subStep, obstacles);
+      }
+    } else {
+      // Small enemies: fast straight-line movers that bounce off walls, obstacles, and other enemies
+      if (enemy.vx === undefined || enemy.vy === undefined) {
+        const angle = Math.random() * Math.PI * 2;
+        enemy.vx = Math.cos(angle) * SMALL_ENEMY_SPEED;
+        enemy.vy = Math.sin(angle) * SMALL_ENEMY_SPEED;
+      }
+      const half = enemy.half;
+      let nextX = enemy.x + enemy.vx;
+      let nextY = enemy.y + enemy.vy;
+
+      const tryCollide = (nx, ny) => {
+        // Check room bounds
+        if (
+          nx - half < ROOM_MARGIN_X ||
+          nx + half > ROOM_MARGIN_X + ROOM_WIDTH ||
+          ny - half < ROOM_MARGIN_Y ||
+          ny + half > ROOM_MARGIN_Y + ROOM_HEIGHT
+        ) {
+          return true;
+        }
+        // Check obstacles
+        const temp = { x: nx, y: ny, half };
+        for (const ob of obstacles) {
+          if (rectIntersect(temp, ob)) return true;
+        }
+        // Check other enemies
+        for (const other of enemies) {
+          if (other === enemy || other.hp <= 0 || other.roomId !== enemy.roomId)
+            continue;
+          if (rectIntersect(temp, other)) return true;
+        }
+        return false;
+      };
+
+      // If we would collide, pick a new random direction
+      if (tryCollide(nextX, nextY)) {
+        let found = false;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const angle = Math.random() * Math.PI * 2;
+          const vx = Math.cos(angle) * SMALL_ENEMY_SPEED;
+          const vy = Math.sin(angle) * SMALL_ENEMY_SPEED;
+          const candX = enemy.x + vx;
+          const candY = enemy.y + vy;
+          if (!tryCollide(candX, candY)) {
+            enemy.vx = vx;
+            enemy.vy = vy;
+            nextX = candX;
+            nextY = candY;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          // Nowhere safe to go this frame
+          return;
         }
       }
 
-      const oldY = enemy.y;
-      enemy.y += vy;
-      for (const ob of obstacles) {
-        if (rectIntersect(enemy, ob)) {
-          enemy.y = oldY;
-          break;
-        }
-      }
+      enemy.x = nextX;
+      enemy.y = nextY;
     }
 
-    // Boss: shoot 3 fireballs in a fan (like hero)
+    // Boss: shoot a single large, slow fireball toward the player
     if (enemy.isBoss && enemy.fireballCooldown <= 0) {
-      const baseAngle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
-      const spread = Math.PI / 18;
-      const angles = [baseAngle - spread, baseAngle, baseAngle + spread];
-      angles.forEach((angle) => {
-        const vx = Math.cos(angle) * FIREBALL_SPEED;
-        const vy = Math.sin(angle) * FIREBALL_SPEED;
-        const startX = enemy.x + Math.cos(angle) * (enemy.half + FIREBALL_SIZE);
-        const startY = enemy.y + Math.sin(angle) * (enemy.half + FIREBALL_SIZE);
-        enemyProjectiles.push({
-          x: startX,
-          y: startY,
-          vx,
-          vy,
-          roomId: enemy.roomId,
-          size: FIREBALL_SIZE,
-          damage: BOSS_FIREBALL_DAMAGE,
-          alive: true,
-          get half() { return this.size / 2; },
-        });
+      const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+      const vx = Math.cos(angle) * BOSS_FIREBALL_SPEED;
+      const vy = Math.sin(angle) * BOSS_FIREBALL_SPEED;
+      const startX = enemy.x + Math.cos(angle) * (enemy.half + BOSS_FIREBALL_SIZE);
+      const startY = enemy.y + Math.sin(angle) * (enemy.half + BOSS_FIREBALL_SIZE);
+      enemyProjectiles.push({
+        x: startX,
+        y: startY,
+        vx,
+        vy,
+        roomId: enemy.roomId,
+        size: BOSS_FIREBALL_SIZE,
+        damage: BOSS_FIREBALL_DAMAGE,
+        isBoss: true,
+        alive: true,
+        get half() { return this.size / 2; },
       });
       enemy.fireballCooldown = BOSS_FIREBALL_COOLDOWN;
     }
@@ -1375,17 +1524,20 @@ function updateEnemyProjectiles() {
       p.y - p.half < ROOM_MARGIN_Y ||
       p.y + p.half > ROOM_MARGIN_Y + ROOM_HEIGHT
     ) {
+      if (p.isBoss) spawnBigExplosion(p.x, p.y);
       p.alive = false;
       return;
     }
     for (const ob of obstacles) {
       if (rectIntersect(p, ob)) {
+        if (p.isBoss) spawnBigExplosion(p.x, p.y);
         p.alive = false;
         return;
       }
     }
     if (rectIntersect(p, player) && player.currentRoom === p.roomId) {
       player.hp = Math.max(0, player.hp - 1);  // always 1 heart per enemy fireball hit
+      if (p.isBoss) spawnBigExplosion(p.x, p.y);
       p.alive = false;
       if (player.hp <= 0) {
         isGameOver = true;
@@ -1624,10 +1776,55 @@ function drawCoinPickups() {
 function drawEnemyProjectiles() {
   enemyProjectiles.forEach((p) => {
     if (p.roomId !== player.currentRoom || !p.alive) return;
-    ctx.fillStyle = "#b71c1c";
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.half, 0, Math.PI * 2);
-    ctx.fill();
+    if (p.isBoss) {
+      // Large meteor-style boss fireball: orange core, yellow edge, long tail
+      const speed = Math.hypot(p.vx, p.vy) || 1;
+      const dirX = p.vx / speed;
+      const dirY = p.vy / speed;
+
+      const tailLength = p.size * 3;
+      const tailStartX = p.x - dirX * p.half;
+      const tailStartY = p.y - dirY * p.half;
+      const tailEndX = tailStartX - dirX * tailLength;
+      const tailEndY = tailStartY - dirY * tailLength;
+
+      const tailGradient = ctx.createLinearGradient(
+        tailStartX,
+        tailStartY,
+        tailEndX,
+        tailEndY
+      );
+      tailGradient.addColorStop(0, "rgba(255, 215, 64, 0.9)");
+      tailGradient.addColorStop(1, "rgba(255, 152, 0, 0)");
+
+      ctx.strokeStyle = tailGradient;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(tailStartX, tailStartY);
+      ctx.lineTo(tailEndX, tailEndY);
+      ctx.stroke();
+
+      const radial = ctx.createRadialGradient(
+        p.x,
+        p.y,
+        p.half * 0.2,
+        p.x,
+        p.y,
+        p.half
+      );
+      radial.addColorStop(0, "#ff9800"); // orange core
+      radial.addColorStop(1, "#ffeb3b"); // yellow edge
+
+      ctx.fillStyle = radial;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.half, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "#b71c1c";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.half, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 }
 
