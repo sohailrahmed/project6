@@ -5,15 +5,12 @@ const ctx = canvas.getContext("2d");
 
 // HUD elements
 const playerHeartsEl = document.getElementById("player-hearts");
-const weaponFireballEl = document.getElementById("weapon-fireball");
-const weaponSwordEl = document.getElementById("weapon-sword");
+const stripSlotsEl = document.getElementById("strip-slots");
 const enemiesValueEl = document.getElementById("enemies-value");
 const playerCoinsEl = document.getElementById("player-coins");
 const overlayEl = document.getElementById("message-overlay");
 const messageTextEl = document.getElementById("message-text");
 const restartButton = document.getElementById("restart-button");
-const inventorySlotsEl = document.getElementById("inventory-slots");
-
 const ROOM_WIDTH = 640;
 const ROOM_HEIGHT = 480;
 const MINIMAP_PANEL_WIDTH = 140;
@@ -94,6 +91,19 @@ heroImage.onload = () => {
   heroSpriteLoaded = true;
 };
 
+const shopkeeperImage = new Image();
+shopkeeperImage.src = "shopkeeper.png";
+let shopkeeperLoaded = false;
+const SHOPKEEPER_SPRITE_COLS = 4;
+const SHOPKEEPER_SPRITE_ROWS = 4;
+let shopkeeperFrameWidth = 0;
+let shopkeeperFrameHeight = 0;
+shopkeeperImage.onload = () => {
+  shopkeeperFrameWidth = shopkeeperImage.width / SHOPKEEPER_SPRITE_COLS;
+  shopkeeperFrameHeight = shopkeeperImage.height / SHOPKEEPER_SPRITE_ROWS;
+  shopkeeperLoaded = true;
+};
+
 // Animation state for the hero sprite
 const heroAnim = {
   dir: HERO_DIR_DOWN,
@@ -129,6 +139,52 @@ const SHOP_ITEMS = [
   { id: "potion", name: "Healing Potion", price: 3, offsetX: SHOP_ITEM_SPACING, offsetY: 0 },
 ];
 let shopSold = { shield: false, key: false, potion: false };
+
+const SHOPKEEPER_SPEED = 1.2;
+const SHOPKEEPER_SIZE = 48;
+const SHOPKEEPER_WAYPOINT_R = 18;
+const SHOPKEEPER_SQUARE = [
+  { x: ROOM_MARGIN_X + 100, y: ROOM_MARGIN_Y + 90 },
+  { x: ROOM_MARGIN_X + ROOM_WIDTH - 100, y: ROOM_MARGIN_Y + 90 },
+  { x: ROOM_MARGIN_X + ROOM_WIDTH - 100, y: ROOM_MARGIN_Y + ROOM_HEIGHT - 90 },
+  { x: ROOM_MARGIN_X + 100, y: ROOM_MARGIN_Y + ROOM_HEIGHT - 90 },
+];
+const SHOPKEEPER_REST = {
+  x: ROOM_MARGIN_X + ROOM_WIDTH / 2,
+  y: ROOM_MARGIN_Y + ROOM_HEIGHT * 0.65,
+};
+const COUNTER_TOP = SHOP_CENTER_Y - 10;
+const COUNTER_BOTTOM = SHOP_CENTER_Y + 14;
+const SHOPKEEPER_HALF = 24;
+const SHOPKEEPER_COUNTER_Y_MIN = COUNTER_BOTTOM + SHOPKEEPER_HALF;
+let shopkeeper = {
+  x: ROOM_MARGIN_X + 100,
+  y: ROOM_MARGIN_Y + 90,
+  state: "square",
+  waypointIndex: 0,
+  facingAngle: 0,
+  walkFrameIndex: 0,
+  walkFrameCounter: 0,
+};
+
+const SHOPKEEPER_CAPTION_PHRASES = [
+  "Finding everything alright there?",
+  "Can I help you with anything?",
+  "Feel free to look.",
+  "Yes, that's an excellent item and it's on sale.",
+];
+const SHOPKEEPER_NO_WEAPON_PHRASES = [
+  "There's no need for that.",
+  "That's not necessary beta.",
+];
+let shopkeeperCaptionText = "";
+let shopkeeperCaptionUntil = 0;
+let shopkeeperCaptionIndex = 0;
+let shopkeeperCaptionNextAt = 0;
+let gameFrameCount = 0;
+const SHOPKEEPER_CAPTION_INTERVAL = 300;
+const SHOPKEEPER_CAPTION_DURATION = 180;
+
 const ROOM9_CAVERN_DOOR_CX = ROOM_MARGIN_X + ROOM_WIDTH / 2;
 const ROOM9_CAVERN_DOOR_CY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
 const ROOM9_CAVERN_DOOR_W = 100;
@@ -178,7 +234,7 @@ class Player extends Entity {
     this.knockbackNx = 0;
     this.knockbackNy = 0;
     this.contactDamageCooldown = 0;  // frames until next contact can deal 1 heart (prevents multi-enemy stack from one-shotting)
-    this.coins = 0;
+    this.coins = 3;
     this.hasShield = false;
     this.shieldHp = 0;       // 1 = blocks one hit, then shield is gone
     this.hasBossKey = false;
@@ -198,7 +254,7 @@ class Player extends Entity {
     this.knockbackNx = 0;
     this.knockbackNy = 0;
     this.contactDamageCooldown = 0;
-    this.coins = 0;
+    this.coins = 3;
     this.hasShield = false;
     this.shieldHp = 0;
     this.hasBossKey = false;
@@ -582,9 +638,7 @@ function setupRoomObstacles() {
   add(9, 80, 260, 26); add(9, 106, 260, 26); add(9, 560, 260, 28);
   add(9, 55, 55, 24); add(9, 79, 55, 24); add(9, 537, 425, 24); add(9, 561, 425, 24);
 
-  // Room 10 – hidden room (not on minimap); stairs at top center
-  add(10, 120, 200, 28); add(10, 500, 200, 28); add(10, 200, 360, 26); add(10, 440, 360, 26);
-  add(10, 320, 320, 28); add(10, 120, 380, 26); add(10, 520, 380, 26);
+  // Room 10 – hidden room (no blocks); shopkeeper walks square then faces hero at center
 
   // Room 7 = BOSS_ROOM: no blocks
 }
@@ -622,6 +676,7 @@ let cavernProgress = 0;
 let cavernBlackAlpha = 0;
 let victory = false;
 let hasStarted = false; // becomes true after first start
+let selectedStripIndex = 0; // 0=fireball, 1=sword, 2+=inventory; R=cycle, Spacebar=select/use
 
 function setupEnemies() {
   enemies = [];
@@ -787,6 +842,7 @@ function resetGame() {
   cavernProgress = 0;
   cavernBlackAlpha = 0;
   shopSold = { shield: false, key: false, potion: false };
+  selectedStripIndex = 0;
   overlayEl.classList.add("hidden");
   updateHUD();
 }
@@ -862,39 +918,42 @@ function drawDeathScatter() {
 }
 
 function updateHUD() {
-  const n = Math.max(0, player.hp);
+  const n = Math.max(0, Math.ceil(player.hp));  // fractional HP when shield halves damage
   playerHeartsEl.innerHTML = n ? "<span class=\"heart\" aria-hidden=\"true\">♥</span>".repeat(n) : "";
-  playerHeartsEl.setAttribute("aria-label", `Health: ${n} hearts`);
-  if (weaponFireballEl) weaponFireballEl.classList.toggle("active", player.weapon === WEAPON_FIREBALL);
-  if (weaponSwordEl) weaponSwordEl.classList.toggle("active", player.weapon === WEAPON_SWORD);
+  playerHeartsEl.setAttribute("aria-label", `Health: ${player.hp} hearts`);
   const aliveEnemies = enemies.filter((e) => e.hp > 0).length;
   enemiesValueEl.textContent = aliveEnemies.toString();
   const c = Math.max(0, player.coins);
   playerCoinsEl.innerHTML = c ? "<span class=\"coin\" aria-hidden=\"true\">●</span>".repeat(c) : "";
   playerCoinsEl.setAttribute("aria-label", `Coins: ${c}`);
 
-  // Inventory (top right): one slot per item; potions are click-to-use
-  if (inventorySlotsEl) {
-    inventorySlotsEl.innerHTML = player.inventory
+  // Strip: weapons + inventory (R cycle, Spacebar select/use)
+  if (stripSlotsEl) {
+    const inv = player.inventory || [];
+    const totalSlots = 2 + inv.length;
+    if (totalSlots > 0) {
+      if (selectedStripIndex >= totalSlots) selectedStripIndex = totalSlots - 1;
+      if (selectedStripIndex < 0) selectedStripIndex = 0;
+    }
+    const slots = [
+      { type: "fireball", name: "Fireball", icon: "\uD83D\uDD25" },
+      { type: "sword", name: "Sword", icon: "\u2694\uFE0F" },
+      ...inv.map((item, i) => ({
+        type: item,
+        name: item === "key" ? "Key" : "Potion",
+        icon: item === "key" ? "\uD83D\uDD11" : "\uD83E\uDDEA",
+        invIndex: i,
+      })),
+    ];
+    stripSlotsEl.innerHTML = slots
       .map(
-        (item, i) =>
-          `<div class="inv-slot${item === "potion" ? " useable" : ""}" data-item="${item}" data-index="${i}"${item === "potion" ? ' title="Click to use: +5 HP"' : ""}>${item === "key" ? "\uD83D\uDD11" : "\uD83E\uDDEA"}</div>`
+        (s, i) =>
+          `<div class="strip-slot${i === selectedStripIndex ? " selected" : ""}" data-slot-index="${i}" data-type="${s.type}"${s.invIndex !== undefined ? ` data-inv-index="${s.invIndex}"` : ""} title="R to cycle, Spacebar to select">` +
+          `<span class="strip-slot-icon" aria-hidden="true">${s.icon}</span>` +
+          `<span class="strip-slot-name">${s.name}</span></div>`
       )
       .join("");
   }
-}
-
-// Click-to-use potion from inventory
-if (inventorySlotsEl) {
-  inventorySlotsEl.addEventListener("click", (e) => {
-    const slot = e.target.closest(".inv-slot.useable");
-    if (!slot) return;
-    const idx = parseInt(slot.getAttribute("data-index"), 10);
-    if (isNaN(idx) || !player.inventory || player.inventory[idx] !== "potion") return;
-    player.inventory.splice(idx, 1);
-    player.hp = Math.min(PLAYER_MAX_HP, player.hp + 5);
-    updateHUD();
-  });
 }
 
 const startHintEl = document.getElementById("start-hint");
@@ -903,8 +962,7 @@ function showStartScreen() {
   messageTextEl.innerHTML = `
     <div style="margin-bottom: 8px;"><strong>How to play</strong></div>
     <div>To move, press WASD or ARROW keys.</div>
-    <div>To attack, press SPACEBAR.</div>
-    <div>To switch weapons, press R.</div>
+    <div>R to cycle weapons & inventory. SPACEBAR to select/use.</div>
   `;
   restartButton.textContent = "Start";
   startHintEl.textContent = "Press SPACEBAR to START";
@@ -963,6 +1021,10 @@ document.addEventListener("keydown", (e) => {
   keys[e.key.toLowerCase()] = true;
 
   if (e.key === " " || e.code === "Space") {
+    if (e.repeat) {
+      e.preventDefault();
+      return;
+    }
     if (!hasStarted) {
       hasStarted = true;
       resetGame();
@@ -971,14 +1033,46 @@ document.addEventListener("keydown", (e) => {
       return;
     }
     if (!isGameOver) {
-      attemptAttack();
+      const inv = player.inventory || [];
+      const totalSlots = 2 + inv.length;
+      if (totalSlots > 0 && selectedStripIndex >= 0 && selectedStripIndex < totalSlots) {
+        if (selectedStripIndex === 0) {
+          player.weapon = WEAPON_FIREBALL;
+          attemptAttack();
+        } else if (selectedStripIndex === 1) {
+          player.weapon = WEAPON_SWORD;
+          attemptAttack();
+        } else {
+          const invIndex = selectedStripIndex - 2;
+          const item = inv[invIndex];
+          if (item === "potion") {
+            player.inventory.splice(invIndex, 1);
+            const curHp = Number(player.hp);
+            player.hp = Math.min(PLAYER_MAX_HP, (isNaN(curHp) ? 0 : curHp) + 5);
+            if (selectedStripIndex >= 2 + player.inventory.length) selectedStripIndex = Math.max(0, 2 + player.inventory.length - 1);
+            updateHUD();
+            e.preventDefault();
+            return;
+          }
+          // key: nothing
+        }
+        updateHUD();
+      } else {
+        attemptAttack();
+      }
     }
     e.preventDefault();
   }
 
   if (e.key.toLowerCase() === "r") {
     if (!isGameOver) {
-      toggleWeapon();
+      const totalSlots = 2 + (player.inventory || []).length;
+      if (totalSlots > 0) {
+        selectedStripIndex = (selectedStripIndex + 1) % totalSlots;
+        if (selectedStripIndex === 0) player.weapon = WEAPON_FIREBALL;
+        else if (selectedStripIndex === 1) player.weapon = WEAPON_SWORD;
+        updateHUD();
+      }
     }
     e.preventDefault();
   }
@@ -1008,6 +1102,14 @@ function toggleWeapon() {
 
 function attemptAttack() {
   if (player.attackCooldown > 0) return;
+
+  if (player.currentRoom === HIDDEN_ROOM) {
+    shopkeeperCaptionText =
+      SHOPKEEPER_NO_WEAPON_PHRASES[
+        Math.floor(Math.random() * SHOPKEEPER_NO_WEAPON_PHRASES.length)
+      ];
+    shopkeeperCaptionUntil = gameFrameCount + SHOPKEEPER_CAPTION_DURATION;
+  }
 
   if (player.weapon === WEAPON_FIREBALL) {
     // Fire three projectiles in a small fan centered on facingAngle
@@ -1341,6 +1443,16 @@ function updateCavernDoorAndSequence() {
       player.y = ROOM_MARGIN_Y + 80;
       cavernSequence = "appearing";
       cavernProgress = 0;
+      shopkeeper.x = SHOPKEEPER_SQUARE[0].x;
+      shopkeeper.y = SHOPKEEPER_SQUARE[0].y;
+      shopkeeper.state = "square";
+      shopkeeper.waypointIndex = 0;
+      shopkeeper.walkFrameIndex = 0;
+      shopkeeper.walkFrameCounter = 0;
+      shopkeeperCaptionText = "";
+      shopkeeperCaptionUntil = 0;
+      shopkeeperCaptionIndex = 0;
+      shopkeeperCaptionNextAt = 0;
     }
   } else if (cavernSequence === "appearing") {
     cavernProgress++;
@@ -1626,15 +1738,11 @@ function updateEnemies() {
     }
     if (enemy.fireballCooldown > 0) enemy.fireballCooldown--;
 
-    // Damage player on contact and start knockback. Shield absorbs one hit.
+    // Damage player on contact and start knockback. Shield halves damage.
     if (rectIntersect(enemy, player)) {
       if (player.contactDamageCooldown <= 0) {
-        if (player.hasShield && player.shieldHp > 0) {
-          player.shieldHp--;
-          if (player.shieldHp <= 0) player.hasShield = false;
-        } else {
-          player.hp = Math.max(0, player.hp - 1);
-        }
+        const damage = player.hasShield ? 0.5 : 1;
+        player.hp = Math.max(0, player.hp - damage);
         player.contactDamageCooldown = 45;  // ~0.75 sec before next contact can damage
       }
 
@@ -1724,12 +1832,8 @@ function updateEnemyProjectiles() {
       }
     }
     if (rectIntersect(p, player) && player.currentRoom === p.roomId) {
-      if (player.hasShield && player.shieldHp > 0) {
-        player.shieldHp--;
-        if (player.shieldHp <= 0) player.hasShield = false;
-      } else {
-        player.hp = Math.max(0, player.hp - 1);
-      }
+      const damage = player.hasShield ? 0.5 : 1;
+      player.hp = Math.max(0, player.hp - damage);
       if (p.isBoss || p.isDemonFireball) spawnBigExplosion(p.x, p.y);
       p.alive = false;
       if (player.hp <= 0) {
@@ -1769,6 +1873,13 @@ function updateCoinPickups() {
 }
 
 function checkWinCondition() {
+  const boss = enemies.find((e) => e.isBoss);
+  if (boss && boss.hp <= 0) {
+    isGameOver = true;
+    victory = true;
+    showEndMessage();
+    return;
+  }
   const stillAlive = enemies.some((e) => e.hp > 0);
   if (!stillAlive) {
     isGameOver = true;
@@ -1925,6 +2036,147 @@ function tryPurchaseInSecretRoom() {
   });
 }
 
+function getShopkeeperFollowTarget() {
+  const margin = 50;
+  const targetX = player.x - 40;
+  let targetY = Math.min(
+    player.y + 60,
+    ROOM_MARGIN_Y + ROOM_HEIGHT - margin
+  );
+  targetY = Math.max(SHOPKEEPER_COUNTER_Y_MIN, targetY);
+  return { x: targetX, y: targetY };
+}
+
+function updateShopkeeper() {
+  if (player.currentRoom !== HIDDEN_ROOM) return;
+
+  if (shopkeeper.state === "following" && gameFrameCount >= shopkeeperCaptionNextAt) {
+    shopkeeperCaptionText = SHOPKEEPER_CAPTION_PHRASES[shopkeeperCaptionIndex];
+    shopkeeperCaptionIndex = (shopkeeperCaptionIndex + 1) % 4;
+    shopkeeperCaptionUntil = gameFrameCount + SHOPKEEPER_CAPTION_DURATION;
+    shopkeeperCaptionNextAt = gameFrameCount + SHOPKEEPER_CAPTION_INTERVAL;
+  }
+
+  let target;
+  if (shopkeeper.state === "square") {
+    target = SHOPKEEPER_SQUARE[shopkeeper.waypointIndex];
+  } else if (shopkeeper.state === "to_rest") {
+    target = SHOPKEEPER_REST;
+  } else if (shopkeeper.state === "following") {
+    target = getShopkeeperFollowTarget();
+  } else {
+    target = null;
+  }
+
+  if (target) {
+    const dx = target.x - shopkeeper.x;
+    const dy = target.y - shopkeeper.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist <= SHOPKEEPER_WAYPOINT_R) {
+      if (shopkeeper.state === "square") {
+        if (shopkeeper.waypointIndex === 3) {
+          shopkeeper.state = "to_rest";
+        } else {
+          shopkeeper.waypointIndex++;
+        }
+      } else if (shopkeeper.state === "to_rest") {
+        shopkeeper.state = "following";
+        shopkeeperCaptionNextAt = gameFrameCount + SHOPKEEPER_CAPTION_INTERVAL;
+      }
+    } else {
+      const move = Math.min(SHOPKEEPER_SPEED, dist);
+      shopkeeper.x += (dx / dist) * move;
+      shopkeeper.y += (dy / dist) * move;
+      shopkeeper.facingAngle = Math.atan2(dy, dx);
+      if (shopkeeper.state === "to_rest" || shopkeeper.state === "following") {
+        shopkeeper.y = Math.max(
+          SHOPKEEPER_COUNTER_Y_MIN,
+          Math.min(shopkeeper.y, ROOM_MARGIN_Y + ROOM_HEIGHT - 40)
+        );
+      }
+      shopkeeper.walkFrameCounter++;
+      if (shopkeeper.walkFrameCounter >= 10) {
+        shopkeeper.walkFrameCounter = 0;
+        shopkeeper.walkFrameIndex = (shopkeeper.walkFrameIndex + 1) % 4;
+      }
+    }
+  }
+  if (shopkeeper.state === "following") {
+    shopkeeper.facingAngle = Math.atan2(
+      player.y - shopkeeper.y,
+      player.x - shopkeeper.x
+    );
+  }
+}
+
+function shopkeeperFacingAngleToRow(angle) {
+  if (angle >= -Math.PI / 4 && angle < Math.PI / 4) return 3;
+  if (angle >= Math.PI / 4 && angle < (3 * Math.PI) / 4) return 0;
+  if (angle >= (3 * Math.PI) / 4 || angle < (-3 * Math.PI) / 4) return 2;
+  return 1;
+}
+
+function drawShopkeeper() {
+  if (player.currentRoom !== HIDDEN_ROOM || !shopkeeperLoaded) return;
+  const row = shopkeeperFacingAngleToRow(shopkeeper.facingAngle);
+  const moving =
+    shopkeeper.state === "square" ||
+    shopkeeper.state === "to_rest" ||
+    shopkeeper.state === "following";
+  const col = moving ? [0, 2, 3, 2][shopkeeper.walkFrameIndex % 4] : 1;
+  const sx = col * shopkeeperFrameWidth;
+  const sy = row * shopkeeperFrameHeight;
+  const w = SHOPKEEPER_SIZE;
+  const scale = w / shopkeeperFrameWidth;
+  const h = shopkeeperFrameHeight * scale;
+  ctx.drawImage(
+    shopkeeperImage,
+    sx,
+    sy,
+    shopkeeperFrameWidth,
+    shopkeeperFrameHeight,
+    shopkeeper.x - w / 2,
+    shopkeeper.y - h / 2,
+    w,
+    h
+  );
+}
+
+function drawShopkeeperCaption() {
+  if (player.currentRoom !== HIDDEN_ROOM) return;
+  if (gameFrameCount >= shopkeeperCaptionUntil || !shopkeeperCaptionText) return;
+  const line = shopkeeperCaptionText;
+  const lineHeight = 18;
+  const padding = 12;
+  const maxW = ctx.measureText(line).width;
+  const bubbleW = Math.max(maxW + padding * 2, 120);
+  const bubbleH = lineHeight + padding * 2;
+  const bx = SHOP_CENTER_X;
+  const by = ROOM_MARGIN_Y + 52;
+  const r = 8;
+  ctx.fillStyle = "rgba(30,30,40,0.95)";
+  ctx.strokeStyle = "#607d8b";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  ctx.lineTo(bx + bubbleW / 2 - r, by);
+  ctx.quadraticCurveTo(bx + bubbleW / 2, by, bx + bubbleW / 2, by + r);
+  ctx.lineTo(bx + bubbleW / 2, by + bubbleH - r);
+  ctx.quadraticCurveTo(bx + bubbleW / 2, by + bubbleH, bx + bubbleW / 2 - r, by + bubbleH);
+  ctx.lineTo(bx - bubbleW / 2 + r, by + bubbleH);
+  ctx.quadraticCurveTo(bx - bubbleW / 2, by + bubbleH, bx - bubbleW / 2, by + bubbleH - r);
+  ctx.lineTo(bx - bubbleW / 2, by + r);
+  ctx.quadraticCurveTo(bx - bubbleW / 2, by, bx - bubbleW / 2 + r, by);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#eceff1";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(line, bx, by + bubbleH / 2);
+}
+
 function drawSecretRoomShop() {
   const cx = SHOP_CENTER_X;
   const cy = SHOP_CENTER_Y;
@@ -2047,11 +2299,15 @@ function drawSecretRoomShop() {
     ctx.font = "14px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    const costY = y + slotR + 10;
     if (sold) {
-      ctx.fillText("SOLD", x, y + slotR + 12);
+      ctx.fillText("SOLD", x, costY);
     } else {
-      ctx.fillText(String(item.price) + " coins", x, y + slotR + 12);
+      ctx.fillText(String(item.price) + " coins", x, costY);
     }
+    ctx.font = "12px sans-serif";
+    ctx.fillStyle = sold ? "#555" : "#9e9e9e";
+    ctx.fillText(item.name, x, costY + 18);
   });
 }
 
@@ -2482,6 +2738,8 @@ function gameLoop() {
 
   drawMinimap();
 
+  gameFrameCount++;
+
   if (!isGameOver && hasStarted) {
     if (player.attackCooldown > 0) player.attackCooldown--;
     if (player.contactDamageCooldown > 0) player.contactDamageCooldown--;
@@ -2509,6 +2767,7 @@ function gameLoop() {
     checkWinCondition();
     updateRoomTransition();
     updateCavernDoorAndSequence();
+    updateShopkeeper();
   }
 
   ctx.save();
@@ -2517,7 +2776,11 @@ function gameLoop() {
   drawObstacles();
   if (player.currentRoom === 9) drawRoom9CavernDoor();
   if (cavernSequence === "descending") drawCavernSteps();
-  if (player.currentRoom === HIDDEN_ROOM) drawSecretRoomShop();
+  if (player.currentRoom === HIDDEN_ROOM) {
+    drawShopkeeper();
+    drawShopkeeperCaption();
+    drawSecretRoomShop();
+  }
   drawEnemies();
   drawHeartPickups();
   drawCoinPickups();
