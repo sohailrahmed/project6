@@ -11,6 +11,9 @@ const playerCoinsEl = document.getElementById("player-coins");
 const overlayEl = document.getElementById("message-overlay");
 const messageTextEl = document.getElementById("message-text");
 const restartButton = document.getElementById("restart-button");
+const gameMusicEl = document.getElementById("game-music");
+const swordSwingEl = document.getElementById("sword-swing");
+const fireballWhooshEl = document.getElementById("fireball-whoosh");
 const ROOM_WIDTH = 640;
 const ROOM_HEIGHT = 480;
 const MINIMAP_PANEL_WIDTH = 140;
@@ -1029,6 +1032,10 @@ document.addEventListener("keydown", (e) => {
       hasStarted = true;
       resetGame();
       overlayEl.classList.add("hidden");
+      if (gameMusicEl) {
+        gameMusicEl.volume = 0.5;
+        gameMusicEl.play().catch(() => {});
+      }
       e.preventDefault();
       return;
     }
@@ -1092,6 +1099,11 @@ document.addEventListener("keyup", (e) => {
 restartButton.addEventListener("click", () => {
   hasStarted = true;
   resetGame();
+  overlayEl.classList.add("hidden");
+  if (gameMusicEl) {
+    gameMusicEl.volume = 0.5;
+    gameMusicEl.play().catch(() => {});
+  }
 });
 
 function toggleWeapon() {
@@ -1112,6 +1124,10 @@ function attemptAttack() {
   }
 
   if (player.weapon === WEAPON_FIREBALL) {
+    if (fireballWhooshEl) {
+      fireballWhooshEl.currentTime = 0;
+      fireballWhooshEl.play().catch(() => {});
+    }
     // Fire three projectiles in a small fan centered on facingAngle
     const baseAngle = player.facingAngle;
     const spread = Math.PI / 18; // ~10° between shots
@@ -1128,6 +1144,10 @@ function attemptAttack() {
 
     player.attackCooldown = 18;
   } else if (player.weapon === WEAPON_SWORD) {
+    if (swordSwingEl) {
+      swordSwingEl.currentTime = 0;
+      swordSwingEl.play().catch(() => {});
+    }
     performSwordAttack();
     player.attackCooldown = 16;
     player.swordSwingTimer = SWORD_SWING_DURATION;
@@ -1895,6 +1915,7 @@ function showEndMessage() {
   restartButton.textContent = "Restart";
   startHintEl.textContent = "";
   overlayEl.classList.remove("hidden");
+  if (gameMusicEl) gameMusicEl.pause();
 }
 
 function drawRoomBackground() {
@@ -2807,4 +2828,9 @@ function gameLoop() {
 // Initialize
 showStartScreen();
 requestAnimationFrame(gameLoop);
+// Start music as soon as the game loads (may be blocked until first user gesture)
+if (gameMusicEl) {
+  gameMusicEl.volume = 0.5;
+  gameMusicEl.play().catch(() => {});
+}
 
