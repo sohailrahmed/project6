@@ -3233,7 +3233,7 @@ function drawSealedDoorCaption() {
 
   ctx.font = "14px sans-serif";
   ctx.textAlign = "center";
-  const lines = ["Defeat all enemies to enter this room...", "or perhaps buy a key"];
+  const lines = ["Defeat all enemies in all rooms to enter this room...", "or perhaps buy a key"];
   const lineHeight = 18;
   const padding = 12;
   const maxW = Math.max(...lines.map((l) => ctx.measureText(l).width));
