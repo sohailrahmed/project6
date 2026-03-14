@@ -19,6 +19,7 @@ const itemEquipEl = document.getElementById("item-equip");
 const heartPickupEl = document.getElementById("heart-pickup");
 const bossChamberEl = document.getElementById("boss-chamber");
 const secretDoorOpenEl = document.getElementById("secret-door-open");
+const trapDoorOpenEl = document.getElementById("trapdoor-open");
 const ROOM_WIDTH = 640;
 const ROOM_HEIGHT = 480;
 const MINIMAP_PANEL_WIDTH = 140;
@@ -50,10 +51,10 @@ const ENEMY_FIREBALL_SIZE = 8;
 const ENEMY_FIREBALL_DAMAGE = 1;
 
 const BOSS_ROOM = 7;  // room furthest from spawn; only enterable when all other enemies dead; exactly 1 enemy (the boss)
-const BOSS_SIZE = ENEMY_ELITE_SIZE;   // half of previous size (same as elite)
+const BOSS_SIZE = ENEMY_ELITE_SIZE * 2;   // twice as big as elite
 const BOSS_HP = 50;
-const BOSS_DAMAGE = 1;  // 1 heart on contact
-const BOSS_SPEED = ENEMY_SPEED * 1.5;     // bounces faster than normal demons
+const BOSS_DAMAGE = 2;  // 2 hearts on contact
+const BOSS_SPEED = ENEMY_SPEED * 0.75;    // half as fast as previous (was 1.5x)
 const BOSS_FIREBALL_COOLDOWN = 100;        // frames between shots
 
 const FIREBALL_SPEED = 5;
@@ -72,32 +73,78 @@ const WEAPON_FIREBALL = "fireball";
 const WEAPON_SWORD = "sword";
 
 // --- HERO SPRITE CONFIG ---
-// New hero sprite sheet is a 4x4 grid:
-// Row 0: walk forward (toward player / down)
-// Row 1: walk back (away / up)
-// Row 2: walk left  (4th frame currently wrong, faces right)
-// Row 3: walk right
-// Col 1 is preferred idle; cols 0,2,3 are used for movement.
+// All hero sprite sheets (hero.png, amira, faaris, radiyya) use the same 4×4 layout:
+//   Row 0 (top):    4 frames — character walking TOWARDS the player (down on screen)
+//   Row 1:          4 frames — character moving AWAY from the player (up on screen)
+//   Row 2:          4 frames — character walking LEFT
+//   Row 3:          4 frames — character walking RIGHT
+// Col 1 is preferred idle; cols 0,2,3 are used for walk cycle.
 const HERO_SPRITE_COLS = 4;
 const HERO_SPRITE_ROWS = 4;
 
-const HERO_DIR_DOWN = 0;
-const HERO_DIR_UP = 1;
+const HERO_DIR_DOWN = 0;   // towards player (row 0)
+const HERO_DIR_UP = 1;     // away from player (row 1)
 const HERO_DIR_LEFT = 2;
 const HERO_DIR_RIGHT = 3;
 
 const heroImage = new Image();
 heroImage.src = "hero.png";
-
 let heroFrameWidth = 0;
 let heroFrameHeight = 0;
 let heroSpriteLoaded = false;
-
 heroImage.onload = () => {
   heroFrameWidth = heroImage.width / HERO_SPRITE_COLS;
   heroFrameHeight = heroImage.height / HERO_SPRITE_ROWS;
   heroSpriteLoaded = true;
 };
+
+// Amira hero sprite sheet — same 4×4 layout (row 0=towards player, 1=away, 2=left, 3=right)
+const amiraHeroImage = new Image();
+amiraHeroImage.src = "amira hero sprite sheet.png";
+let amiraHeroLoaded = false;
+let amiraHeroFrameWidth = 0;
+let amiraHeroFrameHeight = 0;
+amiraHeroImage.onload = () => {
+  amiraHeroFrameWidth = amiraHeroImage.width / HERO_SPRITE_COLS;
+  amiraHeroFrameHeight = amiraHeroImage.height / HERO_SPRITE_ROWS;
+  amiraHeroLoaded = true;
+};
+
+// Faaris hero sprite sheet — same 4×4 layout (row 0=towards player, 1=away, 2=left, 3=right)
+const faarisHeroImage = new Image();
+faarisHeroImage.src = "faaris hero sprite sheet.png";
+let faarisHeroLoaded = false;
+let faarisHeroFrameWidth = 0;
+let faarisHeroFrameHeight = 0;
+faarisHeroImage.onload = () => {
+  faarisHeroFrameWidth = faarisHeroImage.width / HERO_SPRITE_COLS;
+  faarisHeroFrameHeight = faarisHeroImage.height / HERO_SPRITE_ROWS;
+  faarisHeroLoaded = true;
+};
+
+// Radiyya hero sprite sheet — same 4×4 layout (row 0=towards player, 1=away, 2=left, 3=right)
+const radiyyaHeroImage = new Image();
+radiyyaHeroImage.src = "radiyya hero sprite sheet.png";
+let radiyyaHeroLoaded = false;
+let radiyyaHeroFrameWidth = 0;
+let radiyyaHeroFrameHeight = 0;
+radiyyaHeroImage.onload = () => {
+  radiyyaHeroFrameWidth = radiyyaHeroImage.width / HERO_SPRITE_COLS;
+  radiyyaHeroFrameHeight = radiyyaHeroImage.height / HERO_SPRITE_ROWS;
+  radiyyaHeroLoaded = true;
+};
+
+// Which hero sheet to draw: 'hero' | 'amira' | 'faaris' | 'radiyya'
+let currentHeroSheet = "hero";
+
+// Character select at start: 0 = Faaris, 1 = Amira, 2 = Radiyya
+let characterSelectActive = true;
+let selectedCharacterIndex = 0;
+const CHARACTER_OPTIONS = [
+  { id: "faaris", name: "FAARIS" },
+  { id: "amira", name: "AMIRA" },
+  { id: "radiyya", name: "RADIYYA" },
+];
 
 const shopkeeperImage = new Image();
 shopkeeperImage.src = "shopkeeper.png";
@@ -111,6 +158,72 @@ shopkeeperImage.onload = () => {
   shopkeeperFrameHeight = shopkeeperImage.height / SHOPKEEPER_SPRITE_ROWS;
   shopkeeperLoaded = true;
 };
+
+// Goblin enemy sprite sheet (4 cols × 4 rows):
+// Row 0: walking towards player (down), Row 1: away (up), Row 2: left, Row 3: right
+const goblinImage = new Image();
+goblinImage.onerror = function () {
+  this.onerror = null;
+  this.src = "goblin1.jpg";
+};
+goblinImage.src = "goblin1.png";
+let goblinLoaded = false;
+const GOBLIN_SPRITE_COLS = 4;
+const GOBLIN_SPRITE_ROWS = 4;
+let goblinFrameWidth = 0;
+let goblinFrameHeight = 0;
+goblinImage.onload = () => {
+  goblinFrameWidth = goblinImage.width / GOBLIN_SPRITE_COLS;
+  goblinFrameHeight = goblinImage.height / GOBLIN_SPRITE_ROWS;
+  goblinLoaded = true;
+};
+
+// Goblin2: small demons only, 4×4 same layout; draw at half cell size
+const goblin2Image = new Image();
+goblin2Image.onerror = function () {
+  this.onerror = null;
+  this.src = "goblin2.jpg";
+};
+goblin2Image.src = "goblin2.png";
+let goblin2Loaded = false;
+let goblin2FrameWidth = 0;
+let goblin2FrameHeight = 0;
+goblin2Image.onload = () => {
+  goblin2FrameWidth = goblin2Image.width / 4;
+  goblin2FrameHeight = goblin2Image.height / 4;
+  goblin2Loaded = true;
+};
+
+const goblin3Image = new Image();
+goblin3Image.onerror = function () {
+  this.onerror = null;
+  this.src = "goblin3.jpg";
+};
+goblin3Image.src = "goblin3.png";
+let goblin3Loaded = false;
+let goblin3FrameWidth = 0;
+let goblin3FrameHeight = 0;
+goblin3Image.onload = () => {
+  goblin3FrameWidth = goblin3Image.width / 4;
+  goblin3FrameHeight = goblin3Image.height / 4;
+  goblin3Loaded = true;
+};
+
+// Goblin3 spritesheet (4×4): row 0 = walking towards player (down), row 1 = away (up), row 2 = left, row 3 = right.
+// angle = atan2(vy, vx) = movement direction in screen space.
+function goblin3AngleToRow(angle) {
+  if (angle >= -Math.PI / 4 && angle < Math.PI / 4) return 3;   // right
+  if (angle >= Math.PI / 4 && angle < (3 * Math.PI) / 4) return 0;  // down (towards player)
+  if (angle >= (3 * Math.PI) / 4 || angle < (-3 * Math.PI) / 4) return 2;  // left
+  return 1;  // up (away from player)
+}
+
+function goblinFacingAngleToRow(angle) {
+  if (angle >= -Math.PI / 4 && angle < Math.PI / 4) return 3;
+  if (angle >= Math.PI / 4 && angle < (3 * Math.PI) / 4) return 0;
+  if (angle >= (3 * Math.PI) / 4 || angle < (-3 * Math.PI) / 4) return 2;
+  return 1;
+}
 
 // Animation state for the hero sprite
 const heroAnim = {
@@ -134,8 +247,10 @@ const ROOMS = [
   { id: 8, neighbors: { left: 9, down: 0 } },
   { id: 9, neighbors: { right: 8 } },
   { id: 10, neighbors: { up: 9 } }, // hidden room (not on minimap); exit via top
+  { id: 11, neighbors: { up: 2 } }, // secret room 2 (under room 2 floor); exit via top
 ];
 const HIDDEN_ROOM = 10;
+const SECRET_ROOM_2 = 11;
 // Secret room shop: three items in the middle of room 10
 const SHOP_CENTER_X = ROOM_MARGIN_X + ROOM_WIDTH / 2;
 const SHOP_CENTER_Y = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
@@ -288,6 +403,14 @@ class Enemy extends Entity {
     this.fireballCooldown = 0; // used in room where demons shoot
     this.dropsHearts = false;  // two enemies per room set in setupEnemies
     this.dropsCoins = false;   // two enemies per room set in setupEnemies
+    // Elite: staggered movement – 2 steps random, then 3 steps toward hero (repeat)
+    if (isElite) {
+      this.eliteStepPhase = "random";
+      this.eliteStepsLeft = 2;
+      this.eliteRandomAngle = Math.random() * Math.PI * 2;
+      this.vx = Math.cos(this.eliteRandomAngle);
+      this.vy = Math.sin(this.eliteRandomAngle);
+    }
     // Small (non-elite) enemies move fast in straight lines and bounce
     if (!isElite) {
       const angle = Math.random() * Math.PI * 2;
@@ -297,18 +420,79 @@ class Enemy extends Entity {
   }
 
   draw() {
-    if (this.hitFlashTimer > 0) {
-      ctx.fillStyle = "#ffffff";
-      this.hitFlashTimer--;
+    if (this.isElite) {
+      if (goblinLoaded && goblinFrameWidth > 0) {
+        const angle = this.vx !== 0 || this.vy !== 0
+          ? Math.atan2(this.vy, this.vx)
+          : Math.PI / 2;
+        const row = goblinFacingAngleToRow(angle);
+        const col = Math.floor((gameFrameCount + this.x + this.y) / 8) % GOBLIN_SPRITE_COLS;
+        const sx = col * goblinFrameWidth;
+        const sy = row * goblinFrameHeight;
+        const targetW = this.size;
+        const scale = targetW / goblinFrameWidth;
+        const targetH = goblinFrameHeight * scale;
+        if (this.hitFlashTimer > 0) {
+          ctx.globalAlpha = 0.5;
+          this.hitFlashTimer--;
+        }
+        ctx.drawImage(
+          goblinImage,
+          sx, sy, goblinFrameWidth, goblinFrameHeight,
+          this.x - targetW / 2, this.y - targetH / 2, targetW, targetH
+        );
+        ctx.globalAlpha = 1;
+      } else {
+        if (this.hitFlashTimer > 0) {
+          ctx.fillStyle = "#ffffff";
+          this.hitFlashTimer--;
+        } else {
+          ctx.fillStyle = this.color;
+        }
+        ctx.fillRect(
+          this.x - this.half,
+          this.y - this.half,
+          this.size,
+          this.size
+        );
+      }
     } else {
-      ctx.fillStyle = this.color;
+      if (goblin2Loaded && goblin2FrameWidth > 0) {
+        const angle = this.vx !== 0 || this.vy !== 0
+          ? Math.atan2(this.vy, this.vx)
+          : Math.PI / 2;
+        const row = goblinFacingAngleToRow(angle);
+        const col = Math.floor((gameFrameCount + this.x + this.y) / 8) % 4;
+        const sx = col * goblin2FrameWidth;
+        const sy = row * goblin2FrameHeight;
+        const targetW = PLAYER_SIZE * 2;
+        const scale = targetW / goblin2FrameWidth;
+        const targetH = goblin2FrameHeight * scale;
+        if (this.hitFlashTimer > 0) {
+          ctx.globalAlpha = 0.5;
+          this.hitFlashTimer--;
+        }
+        ctx.drawImage(
+          goblin2Image,
+          sx, sy, goblin2FrameWidth, goblin2FrameHeight,
+          this.x - targetW / 2, this.y - targetH / 2, targetW, targetH
+        );
+        ctx.globalAlpha = 1;
+      } else {
+        if (this.hitFlashTimer > 0) {
+          ctx.fillStyle = "#ffffff";
+          this.hitFlashTimer--;
+        } else {
+          ctx.fillStyle = this.color;
+        }
+        ctx.fillRect(
+          this.x - this.half,
+          this.y - this.half,
+          this.size,
+          this.size
+        );
+      }
     }
-    ctx.fillRect(
-      this.x - this.half,
-      this.y - this.half,
-      this.size,
-      this.size
-    );
   }
 }
 
@@ -334,18 +518,41 @@ class Boss extends Entity {
   }
 
   draw() {
-    if (this.hitFlashTimer > 0) {
-      ctx.fillStyle = "#ffffff";
-      this.hitFlashTimer--;
+    if (goblin3Loaded && goblin3FrameWidth > 0) {
+      const angle = this.vx !== 0 || this.vy !== 0
+        ? Math.atan2(this.vy, this.vx)
+        : Math.PI / 2;
+      const row = goblin3AngleToRow(angle);
+      const col = Math.floor((gameFrameCount + this.x + this.y) / 8) % 4;
+      const sx = col * goblin3FrameWidth;
+      const sy = row * goblin3FrameHeight;
+      const targetW = this.size;
+      const scale = targetW / goblin3FrameWidth;
+      const targetH = goblin3FrameHeight * scale;
+      if (this.hitFlashTimer > 0) {
+        ctx.globalAlpha = 0.5;
+        this.hitFlashTimer--;
+      }
+      ctx.drawImage(
+        goblin3Image,
+        sx, sy, goblin3FrameWidth, goblin3FrameHeight,
+        this.x - targetW / 2, this.y - targetH / 2, targetW, targetH
+      );
+      ctx.globalAlpha = 1;
     } else {
-      ctx.fillStyle = this.color;
+      if (this.hitFlashTimer > 0) {
+        ctx.fillStyle = "#ffffff";
+        this.hitFlashTimer--;
+      } else {
+        ctx.fillStyle = this.color;
+      }
+      ctx.fillRect(
+        this.x - this.half,
+        this.y - this.half,
+        this.size,
+        this.size
+      );
     }
-    ctx.fillRect(
-      this.x - this.half,
-      this.y - this.half,
-      this.size,
-      this.size
-    );
   }
 }
 
@@ -548,17 +755,17 @@ function setupRoomObstacles() {
   roomObstacles.clear();
   const add = (roomId, x, y, size) => addObstacleToRoom(roomId, x, y, size);
 
-  // Room 0 – clusters of blocks
+  // Room 0 – clusters of blocks (kept clear of doorway zones: top 275–365 y<55, right x>585, bottom 275–365 y>425)
   add(0, 120, 100, 28); add(0, 148, 100, 28); add(0, 176, 100, 28); add(0, 204, 100, 28); add(0, 232, 100, 28); // block of 5
   add(0, 480, 140, 32); add(0, 512, 140, 32); add(0, 544, 140, 32); // block of 3
   add(0, 180, 340, 26); add(0, 206, 340, 26); add(0, 232, 340, 26); add(0, 258, 340, 26); // block of 4
   add(0, 420, 320, 30); add(0, 450, 320, 30); add(0, 480, 320, 30); add(0, 510, 320, 30); add(0, 540, 320, 30); // block of 5
   add(0, 320, 220, 28); add(0, 348, 220, 28); add(0, 376, 220, 28); // block of 3
   add(0, 80, 260, 26); add(0, 106, 260, 26); add(0, 132, 260, 26); add(0, 158, 260, 26); // cluster left
-  add(0, 560, 260, 28); add(0, 588, 260, 28); add(0, 616, 260, 28); // cluster right
-  add(0, 260, 80, 26); add(0, 286, 80, 26); add(0, 312, 80, 26); add(0, 338, 80, 26); add(0, 364, 80, 26); // cluster top
+  add(0, 510, 260, 28); add(0, 538, 260, 28); add(0, 566, 260, 28); // cluster right (moved left of door x=585)
+  add(0, 260, 98, 26); add(0, 286, 98, 26); add(0, 312, 98, 26); add(0, 338, 98, 26); add(0, 364, 98, 26); // cluster top (moved below door y<55)
   add(0, 55, 55, 24); add(0, 79, 55, 24); add(0, 103, 55, 24); // corner cluster
-  add(0, 537, 55, 24); add(0, 561, 55, 24); add(0, 585, 55, 24); // corner cluster
+  add(0, 518, 70, 24); add(0, 542, 70, 24); add(0, 566, 70, 24); // corner cluster (below top door, left of right door)
 
   // Room 1
   add(1, 100, 120, 30); add(1, 130, 120, 30); add(1, 160, 120, 30); add(1, 190, 120, 30); // block of 4
@@ -571,16 +778,25 @@ function setupRoomObstacles() {
   add(1, 55, 420, 24); add(1, 79, 420, 24); add(1, 103, 420, 24); add(1, 127, 420, 24); // corner
   add(1, 537, 420, 24); add(1, 561, 420, 24); add(1, 585, 420, 24); // corner
 
-  // Room 2
+  // Room 2 – question mark in center (dot is trigger only, drawn separately)
   add(2, 80, 80, 28); add(2, 108, 80, 28); add(2, 136, 80, 28); add(2, 164, 80, 28); add(2, 192, 80, 28); // block of 5
   add(2, 540, 140, 30); add(2, 570, 140, 30); add(2, 600, 140, 30); add(2, 618, 140, 30); // block of 4
   add(2, 140, 380, 26); add(2, 166, 380, 26); add(2, 192, 380, 26); add(2, 218, 380, 26); add(2, 244, 380, 26); add(2, 270, 380, 26); // block of 6
   add(2, 460, 340, 32); add(2, 492, 340, 32); add(2, 524, 340, 32); add(2, 556, 340, 32); // block of 4
-  add(2, 340, 260, 28); add(2, 368, 260, 28); add(2, 396, 260, 28); add(2, 424, 260, 28); // block of 4
   add(2, 80, 260, 26); add(2, 106, 260, 26); add(2, 132, 260, 26); add(2, 158, 260, 26); // cluster left
   add(2, 580, 260, 28); add(2, 608, 260, 28); add(2, 622, 260, 28); // cluster right
   add(2, 55, 55, 24); add(2, 79, 55, 24); add(2, 103, 55, 24); add(2, 127, 55, 24); // corner
   add(2, 55, 425, 24); add(2, 79, 425, 24); add(2, 103, 425, 24); // corner
+  // Question mark (middle): add directly so spawn-zone check doesn't reject; dot drawn separately as trigger
+  (function () {
+    const r2 = roomObstacles.get(2) || [];
+    const q = (rx, ry, sz) => r2.push(createObstacle(ROOM_MARGIN_X + rx, ROOM_MARGIN_Y + ry, sz));
+    q(296, 168, 24); q(320, 168, 24);
+    q(272, 192, 24); q(344, 192, 24);
+    q(272, 216, 24); q(344, 216, 24);
+    q(296, 240, 24); q(296, 264, 24); q(272, 288, 24);
+    roomObstacles.set(2, r2);
+  })();
 
   // Room 3
   add(3, 120, 200, 30); add(3, 150, 200, 30); add(3, 180, 200, 30); add(3, 210, 200, 30); add(3, 240, 200, 30); // block of 5
@@ -676,12 +892,41 @@ let roomTransition = {
 let cameraOffsetX = 0;
 let cameraOffsetY = 0;
 let sealedDoorCaption = false; // true when player is at a sealed (boss) door
+let bossTypedSequence = "";   // type "boss" to warp to boss chamber
 // Room 9 cavern door: closed -> swinging -> open; then descending sequence to hidden room
 let room9DoorState = "closed"; // 'closed' | 'swinging' | 'open'
 let room9DoorSwingProgress = 0;
 let cavernSequence = "none"; // 'none' | 'descending' | 'fadeout' | 'appearing' | 'ascending'
 let cavernProgress = 0;
 let cavernBlackAlpha = 0;
+// Room 2 secret: push inside ? opens large trap door; stairs lead to secret room 2
+let room2TrapDoorState = "closed"; // 'closed' | 'opening' | 'open'
+let room2TrapDoorProgress = 0;
+let room2SecretSequence = "none";  // 'none' | 'descending' | 'ascending'
+let room2SecretProgress = 0;
+let room2QuestionShiftActive = false;
+let room2QuestionShiftProgress = 0;
+let room2QuestionShiftDx = 0;
+let room2QuestionShiftDy = 0;
+const ROOM2_INSIDE_LEFT = 282;     // inside of ? trigger (room-local)
+const ROOM2_INSIDE_TOP = 182;
+const ROOM2_INSIDE_W = 52;
+const ROOM2_INSIDE_H = 100;
+const ROOM2_DOT_X = 296;
+const ROOM2_DOT_Y = 312;
+const ROOM2_QUESTION_CENTER_X = 308;
+const ROOM2_QUESTION_CENTER_Y = 228;
+const ROOM2_QUESTION_SHIFT_PIXELS = 100;
+const ROOM2_QUESTION_SHIFT_FRAMES = 30;
+const ROOM2_DOORWAY_LEFT = 522;
+const ROOM2_DOORWAY_TOP = 52;
+const ROOM2_DOORWAY_W = 88;
+const ROOM2_DOORWAY_H = 48;
+const ROOM2_TRAPDOOR_OPEN_FRAMES = 45;
+const ROOM2_DESCEND_FRAMES = 90;
+const ROOM2_STAIRS_STEP_W = 70;
+const ROOM2_STAIRS_STEP_H = 10;
+const ROOM2_STAIRS_NUM = 12;
 let victory = false;
 let hasStarted = false; // becomes true after first start
 let selectedStripIndex = 0; // 0=fireball, 1=sword, 2+=inventory; R=cycle, Spacebar=select/use
@@ -849,6 +1094,10 @@ function resetGame() {
   cavernSequence = "none";
   cavernProgress = 0;
   cavernBlackAlpha = 0;
+  room2TrapDoorState = "closed";
+  room2TrapDoorProgress = 0;
+  room2SecretSequence = "none";
+  room2SecretProgress = 0;
   shopSold = { shield: false, key: false, potion: false };
   selectedStripIndex = 0;
   overlayEl.classList.add("hidden");
@@ -977,6 +1226,10 @@ function showStartScreen() {
   overlayEl.classList.remove("hidden");
 }
 
+function showCharacterSelectScreen() {
+  overlayEl.classList.add("hidden");
+}
+
 function spawnExplosion(x, y) {
   explosions.push({
     x,
@@ -1027,6 +1280,26 @@ function drawExplosions() {
 
 document.addEventListener("keydown", (e) => {
   keys[e.key.toLowerCase()] = true;
+
+  if (characterSelectActive) {
+    if (e.key === "ArrowLeft" || e.key === "Left") {
+      selectedCharacterIndex = (selectedCharacterIndex - 1 + CHARACTER_OPTIONS.length) % CHARACTER_OPTIONS.length;
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "ArrowRight" || e.key === "Right") {
+      selectedCharacterIndex = (selectedCharacterIndex + 1) % CHARACTER_OPTIONS.length;
+      e.preventDefault();
+      return;
+    }
+    if ((e.key === " " || e.code === "Space") && !e.repeat) {
+      currentHeroSheet = CHARACTER_OPTIONS[selectedCharacterIndex].id;
+      characterSelectActive = false;
+      showStartScreen();
+      e.preventDefault();
+      return;
+    }
+  }
 
   if (e.key === " " || e.code === "Space") {
     if (e.repeat) {
@@ -1095,6 +1368,26 @@ document.addEventListener("keydown", (e) => {
     }
     e.preventDefault();
   }
+
+  if (!e.repeat && hasStarted && !isGameOver) {
+    const key = e.key.toLowerCase();
+    const next = "boss"[bossTypedSequence.length];
+    if (key === next) {
+      bossTypedSequence += key;
+      if (bossTypedSequence === "boss") {
+        player.currentRoom = BOSS_ROOM;
+        player.x = ROOM_MARGIN_X + ROOM_WIDTH / 2;
+        player.y = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
+        bossTypedSequence = "";
+        if (bossChamberEl) {
+          bossChamberEl.currentTime = 0;
+          bossChamberEl.play().catch(() => {});
+        }
+      }
+    } else {
+      bossTypedSequence = "";
+    }
+  }
 });
 
 document.addEventListener("keyup", (e) => {
@@ -1102,6 +1395,12 @@ document.addEventListener("keyup", (e) => {
 });
 
 restartButton.addEventListener("click", () => {
+  if (characterSelectActive) {
+    currentHeroSheet = CHARACTER_OPTIONS[selectedCharacterIndex].id;
+    characterSelectActive = false;
+    showStartScreen();
+    return;
+  }
   hasStarted = true;
   resetGame();
   overlayEl.classList.add("hidden");
@@ -1196,6 +1495,7 @@ function performSwordAttack() {
 function updatePlayerMovement() {
   if (roomTransition.active) return; // no movement during room slide
   if (cavernSequence !== "none") return; // no movement during cavern descent/appear
+  if (room2SecretSequence !== "none") return; // no movement during room 2 secret stairs
   // Apply knockback first (slower, over multiple frames). Never allow ending inside a block.
   if (player.knockbackRemaining > 0) {
     const move = Math.min(KNOCKBACK_SPEED_PER_FRAME, player.knockbackRemaining);
@@ -1240,10 +1540,10 @@ function updatePlayerMovement() {
   let moveX = 0;
   let moveY = 0;
 
-  if (keys["arrowup"]) moveY -= 1;
-  if (keys["arrowdown"]) moveY += 1;
-  if (keys["arrowleft"]) moveX -= 1;
-  if (keys["arrowright"]) moveX += 1;
+  if (keys["arrowup"] || keys["w"]) moveY -= 1;
+  if (keys["arrowdown"] || keys["s"]) moveY += 1;
+  if (keys["arrowleft"] || keys["a"]) moveX -= 1;
+  if (keys["arrowright"] || keys["d"]) moveX += 1;
 
   if (moveX !== 0 || moveY !== 0) {
     const len = Math.hypot(moveX, moveY);
@@ -1505,10 +1805,85 @@ function updateCavernDoorAndSequence() {
   }
 }
 
+function updateRoom2TrapDoorAndSequence() {
+  if (room2QuestionShiftActive) {
+    room2QuestionShiftProgress++;
+    if (room2QuestionShiftProgress >= ROOM2_QUESTION_SHIFT_FRAMES) {
+      room2QuestionShiftActive = false;
+      room2TrapDoorState = "opening";
+      room2TrapDoorProgress = 0;
+    }
+  }
+  if (room2TrapDoorState === "opening") {
+    room2TrapDoorProgress++;
+    if (room2TrapDoorProgress >= ROOM2_TRAPDOOR_OPEN_FRAMES) {
+      room2TrapDoorState = "open";
+    }
+  }
+  if (room2SecretSequence === "descending") {
+    room2SecretProgress++;
+    player.y += 2.2;
+    if (room2SecretProgress >= ROOM2_DESCEND_FRAMES) {
+      room2SecretSequence = "none";
+      player.currentRoom = SECRET_ROOM_2;
+      player.x = ROOM_MARGIN_X + ROOM_WIDTH / 2;
+      player.y = ROOM_MARGIN_Y + 80;
+    }
+  } else if (room2SecretSequence === "ascending") {
+    room2SecretProgress++;
+    player.y -= 2.2;
+    if (room2SecretProgress >= ROOM2_DESCEND_FRAMES) {
+      room2SecretSequence = "none";
+      player.x = ROOM_MARGIN_X + ROOM2_DOORWAY_LEFT + ROOM2_DOORWAY_W / 2;
+      player.y = ROOM_MARGIN_Y + ROOM2_DOORWAY_TOP - 24;
+    }
+  }
+}
+
 function handleRoomTransitions() {
   if (roomTransition.active) return;
 
   sealedDoorCaption = false;
+
+  if (player.currentRoom === 2) {
+    const prx = player.x - ROOM_MARGIN_X;
+    const pry = player.y - ROOM_MARGIN_Y;
+    if (room2TrapDoorState === "closed" && !room2QuestionShiftActive) {
+      if (
+        prx >= ROOM2_INSIDE_LEFT && prx <= ROOM2_INSIDE_LEFT + ROOM2_INSIDE_W &&
+        pry >= ROOM2_INSIDE_TOP && pry <= ROOM2_INSIDE_TOP + ROOM2_INSIDE_H
+      ) {
+        const dx = ROOM2_QUESTION_CENTER_X - prx;
+        const dy = ROOM2_QUESTION_CENTER_Y - pry;
+        const dist = Math.hypot(dx, dy) || 1;
+        room2QuestionShiftActive = true;
+        room2QuestionShiftProgress = 0;
+        room2QuestionShiftDx = dx / dist;
+        room2QuestionShiftDy = dy / dist;
+        if (trapDoorOpenEl) {
+          trapDoorOpenEl.currentTime = 0;
+          trapDoorOpenEl.play().catch(() => {});
+        }
+      }
+    } else if (room2TrapDoorState === "open" && room2SecretSequence === "none") {
+      const dl = ROOM_MARGIN_X + ROOM2_DOORWAY_LEFT;
+      const dt = ROOM_MARGIN_Y + ROOM2_DOORWAY_TOP;
+      if (
+        player.x >= dl && player.x <= dl + ROOM2_DOORWAY_W &&
+        player.y >= dt && player.y <= dt + ROOM2_DOORWAY_H
+      ) {
+        room2SecretSequence = "descending";
+        room2SecretProgress = 0;
+        player.x = ROOM_MARGIN_X + ROOM2_DOORWAY_LEFT + ROOM2_DOORWAY_W / 2;
+        player.y = ROOM_MARGIN_Y + ROOM2_DOORWAY_TOP + ROOM2_DOORWAY_H / 2;
+        if (secretDoorOpenEl) {
+          secretDoorOpenEl.currentTime = 0;
+          secretDoorOpenEl.play().catch(() => {});
+        }
+        return;
+      }
+    }
+  }
 
   const room = ROOMS[player.currentRoom];
   const leftDoorY = ROOM_MARGIN_Y + ROOM_HEIGHT / 2;
@@ -1551,6 +1926,17 @@ function handleRoomTransitions() {
       player.x = ROOM9_CAVERN_DOOR_CX;
       const stepsBottomY = ROOM9_CAVERN_DOOR_CY + ROOM9_CAVERN_DOOR_H / 2 + 12 * 14;
       player.y = stepsBottomY;
+      if (secretDoorOpenEl) {
+        secretDoorOpenEl.currentTime = 0;
+        secretDoorOpenEl.play().catch(() => {});
+      }
+    } else if (player.currentRoom === SECRET_ROOM_2 && room.neighbors.up === 2) {
+      room2SecretSequence = "ascending";
+      room2SecretProgress = 0;
+      player.currentRoom = 2;
+      player.x = ROOM_MARGIN_X + ROOM2_DOORWAY_LEFT + ROOM2_DOORWAY_W / 2;
+      const stairsBottomY = ROOM_MARGIN_Y + ROOM2_DOORWAY_TOP + ROOM2_DOORWAY_H + ROOM2_STAIRS_NUM * (ROOM2_STAIRS_STEP_H + 4);
+      player.y = stairsBottomY;
       if (secretDoorOpenEl) {
         secretDoorOpenEl.currentTime = 0;
         secretDoorOpenEl.play().catch(() => {});
@@ -1632,53 +2018,122 @@ function updateEnemies() {
     const obstacles = roomObstacles.get(enemy.roomId) || [];
 
     if (enemy.isBoss) {
-      // Boss: bounce around inside the boss room instead of chasing directly
+      // Boss: move toward the hero (same room only; boss room has no obstacles)
       const half = enemy.half;
-      // Predict next position
-      let nextX = enemy.x + enemy.vx;
-      let nextY = enemy.y + enemy.vy;
-
-      // Bounce on room walls (boss room has no obstacles)
-      if (
-        nextX - half < ROOM_MARGIN_X ||
-        nextX + half > ROOM_MARGIN_X + ROOM_WIDTH
-      ) {
-        enemy.vx = -enemy.vx;
-        nextX = enemy.x + enemy.vx;
-      }
-      if (
-        nextY - half < ROOM_MARGIN_Y ||
-        nextY + half > ROOM_MARGIN_Y + ROOM_HEIGHT
-      ) {
-        enemy.vy = -enemy.vy;
-        nextY = enemy.y + enemy.vy;
-      }
-
+      const dx = player.x - enemy.x;
+      const dy = player.y - enemy.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const vx = (dx / dist) * BOSS_SPEED;
+      const vy = (dy / dist) * BOSS_SPEED;
+      let nextX = enemy.x + vx;
+      let nextY = enemy.y + vy;
+      enemy.vx = vx;
+      enemy.vy = vy;
+      nextX = clamp(
+        nextX,
+        ROOM_MARGIN_X + half,
+        ROOM_MARGIN_X + ROOM_WIDTH - half
+      );
+      nextY = clamp(
+        nextY,
+        ROOM_MARGIN_Y + half,
+        ROOM_MARGIN_Y + ROOM_HEIGHT - half
+      );
       enemy.x = nextX;
       enemy.y = nextY;
+    } else if (enemy.roomId === 6 && enemy.isElite) {
+      // Room 6 demons: walk in current direction until wall/obstacle/other demon, then turn 90°
+      const speed = enemy.speed !== undefined ? enemy.speed : ENEMY_SPEED;
+      const half = enemy.half;
+
+      if (enemy.vx === undefined || enemy.vy === undefined) {
+        const angle = Math.random() * Math.PI * 2;
+        enemy.vx = Math.cos(angle);
+        enemy.vy = Math.sin(angle);
+      }
+
+      const dx = enemy.vx * speed;
+      const dy = enemy.vy * speed;
+      let nextX = clamp(
+        enemy.x + dx,
+        ROOM_MARGIN_X + half,
+        ROOM_MARGIN_X + ROOM_WIDTH - half
+      );
+      let nextY = clamp(
+        enemy.y + dy,
+        ROOM_MARGIN_Y + half,
+        ROOM_MARGIN_Y + ROOM_HEIGHT - half
+      );
+
+      const hitWall =
+        nextX !== enemy.x + dx || nextY !== enemy.y + dy;
+
+      let hitObstacle = false;
+      const temp = { x: nextX, y: nextY, half };
+      for (const ob of obstacles) {
+        if (rectIntersect(temp, ob)) {
+          hitObstacle = true;
+          break;
+        }
+      }
+
+      let hitOther = false;
+      for (const other of enemies) {
+        if (other === enemy || other.hp <= 0 || other.roomId !== 6) continue;
+        if (rectIntersect(temp, other)) {
+          hitOther = true;
+          break;
+        }
+      }
+
+      if (hitWall || hitObstacle || hitOther) {
+        const sign = Math.random() < 0.5 ? 1 : -1;
+        const oldVx = enemy.vx;
+        const oldVy = enemy.vy;
+        enemy.vx = -sign * oldVy;
+        enemy.vy = sign * oldVx;
+      } else {
+        enemy.x = nextX;
+        enemy.y = nextY;
+      }
     } else if (enemy.isElite) {
-      // Elite demons: keep wobble movement that tends toward the player
+      // Elite: 2 steps in a random direction, then 3 steps toward hero; repeat
       const speed = enemy.speed !== undefined ? enemy.speed : ENEMY_SPEED;
       const subStep = speed / 3;
-      for (let i = 0; i < 3; i++) {
-        let dirX = 0;
-        let dirY = 0;
-        if (i === 0) {
-          // First step: random direction
-          const angle = Math.random() * Math.PI * 2;
-          dirX = Math.cos(angle);
-          dirY = Math.sin(angle);
+
+      if (enemy.eliteStepsLeft <= 0) {
+        if (enemy.eliteStepPhase === "random") {
+          enemy.eliteStepPhase = "towards";
+          enemy.eliteStepsLeft = 3;
         } else {
-          // Next two steps: move toward the player
-          const dx = player.x - enemy.x;
-          const dy = player.y - enemy.y;
-          const dist = Math.hypot(dx, dy);
-          if (dist <= 4) break;
+          enemy.eliteStepPhase = "random";
+          enemy.eliteStepsLeft = 2;
+          enemy.eliteRandomAngle = Math.random() * Math.PI * 2;
+        }
+      }
+
+      let dirX = 0;
+      let dirY = 0;
+      if (enemy.eliteStepPhase === "random") {
+        dirX = Math.cos(enemy.eliteRandomAngle);
+        dirY = Math.sin(enemy.eliteRandomAngle);
+      } else {
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 4) {
           dirX = dx / dist;
           dirY = dy / dist;
         }
+      }
+
+      enemy.vx = dirX;
+      enemy.vy = dirY;
+
+      for (let i = 0; i < 3; i++) {
         moveEnemyWithCollision(enemy, dirX * subStep, dirY * subStep, obstacles);
       }
+      enemy.eliteStepsLeft--;
     } else {
       // Small enemies: fast straight-line movers that bounce off walls, obstacles, and other enemies
       if (enemy.vx === undefined || enemy.vy === undefined) {
@@ -2015,6 +2470,66 @@ function drawObstacles() {
   obstacles.forEach((ob) => {
     ctx.fillRect(ob.x - ob.half, ob.y - ob.half, ob.size, ob.size);
   });
+}
+
+function drawRoom2Stairs() {
+  const cx = ROOM_MARGIN_X + ROOM2_DOORWAY_LEFT + ROOM2_DOORWAY_W / 2;
+  const startY = ROOM_MARGIN_Y + ROOM2_DOORWAY_TOP + ROOM2_DOORWAY_H;
+  ctx.fillStyle = "#3d3d4a";
+  for (let i = 0; i < ROOM2_STAIRS_NUM; i++) {
+    const y = startY + i * (ROOM2_STAIRS_STEP_H + 4);
+    const x = cx - ROOM2_STAIRS_STEP_W / 2 + (i % 2) * 8;
+    ctx.fillRect(x, y, ROOM2_STAIRS_STEP_W, ROOM2_STAIRS_STEP_H);
+  }
+}
+
+function drawRoom2SecretElements() {
+  if (player.currentRoom !== 2) return;
+  const dotSize = 24;
+  const dotHalf = dotSize / 2;
+  let dotOffsetX = 0;
+  let dotOffsetY = 0;
+  if (room2QuestionShiftActive) {
+    const t = room2QuestionShiftProgress / ROOM2_QUESTION_SHIFT_FRAMES;
+    dotOffsetX = ROOM2_QUESTION_SHIFT_PIXELS * t * room2QuestionShiftDx;
+    dotOffsetY = ROOM2_QUESTION_SHIFT_PIXELS * t * room2QuestionShiftDy;
+  } else if (room2TrapDoorState !== "closed") {
+    dotOffsetX = ROOM2_QUESTION_SHIFT_PIXELS * room2QuestionShiftDx;
+    dotOffsetY = ROOM2_QUESTION_SHIFT_PIXELS * room2QuestionShiftDy;
+  }
+  ctx.fillStyle = "#607d8b";
+  ctx.fillRect(
+    ROOM_MARGIN_X + ROOM2_DOT_X - dotHalf + dotOffsetX,
+    ROOM_MARGIN_Y + ROOM2_DOT_Y - dotHalf + dotOffsetY,
+    dotSize,
+    dotSize
+  );
+
+  if (room2TrapDoorState === "closed") {
+    // Trap door is hidden until hero pushes the question mark and shift completes
+  } else {
+    const dl = ROOM_MARGIN_X + ROOM2_DOORWAY_LEFT;
+    const dt = ROOM_MARGIN_Y + ROOM2_DOORWAY_TOP;
+    const dw = ROOM2_DOORWAY_W;
+    const dh = ROOM2_DOORWAY_H;
+    ctx.fillStyle = "#0d0d12";
+    ctx.fillRect(dl, dt, dw, dh);
+    ctx.strokeStyle = "#3d3d4a";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(dl, dt, dw, dh);
+    if (room2TrapDoorState === "opening") {
+      const t = room2TrapDoorProgress / ROOM2_TRAPDOOR_OPEN_FRAMES;
+      const doorY = dt + dh * (1 - t);
+      ctx.fillStyle = "#2a2520";
+      ctx.fillRect(dl, doorY, dw, dh);
+      ctx.strokeStyle = "#3d3d4a";
+      ctx.strokeRect(dl, doorY, dw, dh);
+    }
+  }
+
+  if (room2SecretSequence === "descending" || room2SecretSequence === "ascending") {
+    drawRoom2Stairs();
+  }
 }
 
 function drawRoom9CavernDoor() {
@@ -2393,9 +2908,17 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 function drawPlayer() {
-  // Draw hero sprite if loaded, otherwise fallback to simple square
-  if (heroSpriteLoaded) {
-    // Determine sprite row based on direction
+  // Resolve which hero sheet to use (same row layout for all: 0=down, 1=up, 2=left, 3=right)
+  let img = heroImage, fw = heroFrameWidth, fh = heroFrameHeight, loaded = heroSpriteLoaded;
+  if (currentHeroSheet === "amira" && amiraHeroLoaded) {
+    img = amiraHeroImage; fw = amiraHeroFrameWidth; fh = amiraHeroFrameHeight; loaded = true;
+  } else if (currentHeroSheet === "faaris" && faarisHeroLoaded) {
+    img = faarisHeroImage; fw = faarisHeroFrameWidth; fh = faarisHeroFrameHeight; loaded = true;
+  } else if (currentHeroSheet === "radiyya" && radiyyaHeroLoaded) {
+    img = radiyyaHeroImage; fw = radiyyaHeroFrameWidth; fh = radiyyaHeroFrameHeight; loaded = true;
+  }
+  if (loaded && fw > 0 && fh > 0) {
+    // Determine sprite row based on direction (row 0=towards player, 1=away, 2=left, 3=right)
     let row = HERO_DIR_DOWN;
     switch (heroAnim.dir) {
       case HERO_DIR_UP:
@@ -2416,28 +2939,20 @@ function drawPlayer() {
     // Choose column: idle uses column 1; walking uses a small sequence.
     let col = 1; // idle
     if (heroAnim.moving) {
-      // For most directions, use columns [0,2,3,2] to create a walk cycle.
-      // For left, avoid the 4th frame which faces right; use [0,2,0,2].
       const seq =
         row === HERO_DIR_LEFT ? [0, 2, 0, 2] : [0, 2, 3, 2];
       col = seq[heroAnim.walkFrameIndex % seq.length];
     }
 
-    const sx = col * heroFrameWidth;
-    const sy = row * heroFrameHeight;
-
-    // Draw the sprite scaled relative to PLAYER_SIZE so it doesn't fill the screen.
-    // Target on-screen width is about twice PLAYER_SIZE; height follows the frame aspect ratio.
+    const sx = col * fw;
+    const sy = row * fh;
     const targetWidth = PLAYER_SIZE * 2;
-    const scale = targetWidth / heroFrameWidth;
-    const targetHeight = heroFrameHeight * scale;
+    const scale = targetWidth / fw;
+    const targetHeight = fh * scale;
 
     ctx.drawImage(
-      heroImage,
-      sx,
-      sy,
-      heroFrameWidth,
-      heroFrameHeight,
+      img,
+      sx, sy, fw, fh,
       player.x - targetWidth / 2,
       player.y - targetHeight / 2,
       targetWidth,
@@ -2800,8 +3315,89 @@ function drawMinimap() {
   }
 }
 
+function getCharacterSelectSprite(index) {
+  if (index === 0) return { img: faarisHeroImage, loaded: faarisHeroLoaded, fw: faarisHeroFrameWidth, fh: faarisHeroFrameHeight };
+  if (index === 1) return { img: amiraHeroImage, loaded: amiraHeroLoaded, fw: amiraHeroFrameWidth, fh: amiraHeroFrameHeight };
+  return { img: radiyyaHeroImage, loaded: radiyyaHeroLoaded, fw: radiyyaHeroFrameWidth, fh: radiyyaHeroFrameHeight };
+}
+
+function drawCharacterSelectScreen() {
+  const cw = canvas.width;
+  const ch = canvas.height;
+  const hue = (Date.now() / 40) % 360;
+  ctx.fillStyle = `hsl(${hue}, 55%, 92%)`;
+  ctx.fillRect(0, 0, cw, ch);
+
+  ctx.fillStyle = "#2c2c38";
+  ctx.font = "bold 22px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText("Select your character", cw / 2, 28);
+
+  const numOptions = CHARACTER_OPTIONS.length;
+  const panelW = 180;
+  const panelH = 220;
+  const avatarH = 180;
+  const gap = 60;
+  const totalW = numOptions * panelW + (numOptions - 1) * gap;
+  const startX = (cw - totalW) / 2 + panelW / 2;
+  const centerY = ch / 2 - 20;
+
+  for (let i = 0; i < numOptions; i++) {
+    const cx = startX + i * (panelW + gap);
+    const isSelected = i === selectedCharacterIndex;
+    const boxLeft = cx - panelW / 2;
+    const boxTop = centerY - panelH / 2;
+
+    ctx.strokeStyle = isSelected ? "#c49b2a" : "#6a6a7a";
+    ctx.lineWidth = isSelected ? 5 : 2;
+    ctx.strokeRect(boxLeft, boxTop, panelW, panelH);
+    if (isSelected) {
+      ctx.fillStyle = "rgba(196, 155, 42, 0.15)";
+      ctx.fillRect(boxLeft, boxTop, panelW, panelH);
+    }
+
+    const sprite = getCharacterSelectSprite(i);
+    const avatarTop = boxTop + 10;
+    const avatarBoxH = avatarH - 10;
+    if (sprite.loaded && sprite.fw > 0 && sprite.fh > 0) {
+      const row = 0;
+      const col = 1;
+      const sx = col * sprite.fw;
+      const sy = row * sprite.fh;
+      const scale = Math.min((panelW - 20) / sprite.fw, avatarBoxH / sprite.fh);
+      const drawW = sprite.fw * scale;
+      const drawH = sprite.fh * scale;
+      const dx = cx - drawW / 2;
+      const dy = avatarTop + (avatarBoxH - drawH) / 2;
+      ctx.drawImage(sprite.img, sx, sy, sprite.fw, sprite.fh, dx, dy, drawW, drawH);
+    } else {
+      ctx.fillStyle = "#b0b0bc";
+      ctx.fillRect(cx - (panelW - 30) / 2, avatarTop + 20, panelW - 30, avatarBoxH - 40);
+    }
+
+    ctx.fillStyle = isSelected ? "#8b6914" : "#4a4a5a";
+    ctx.font = "bold 18px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(CHARACTER_OPTIONS[i].name, cx, boxTop + panelH - 28);
+  }
+
+  ctx.fillStyle = "#5a5a6a";
+  ctx.font = "14px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Left / Right arrows to choose — Space to start", cw / 2, ch - 24);
+}
+
 function gameLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (characterSelectActive) {
+    drawCharacterSelectScreen();
+    updateHUD();
+    requestAnimationFrame(gameLoop);
+    return;
+  }
 
   drawMinimap();
 
@@ -2834,6 +3430,7 @@ function gameLoop() {
     checkWinCondition();
     updateRoomTransition();
     updateCavernDoorAndSequence();
+    updateRoom2TrapDoorAndSequence();
     updateShopkeeper();
   }
 
@@ -2841,6 +3438,7 @@ function gameLoop() {
   ctx.translate(cameraOffsetX, cameraOffsetY);
   drawRoomBackground();
   drawObstacles();
+  if (player.currentRoom === 2) drawRoom2SecretElements();
   if (player.currentRoom === 9) drawRoom9CavernDoor();
   if (cavernSequence === "descending" || cavernSequence === "ascending" || (player.currentRoom === 9 && room9DoorState === "open")) drawCavernSteps();
   if (player.currentRoom === HIDDEN_ROOM) {
@@ -2871,8 +3469,8 @@ function gameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
-// Initialize
-showStartScreen();
+// Initialize: show character select first; after choice, overlay hides and game starts
+showCharacterSelectScreen();
 requestAnimationFrame(gameLoop);
 // Start music as soon as the game loads (may be blocked until first user gesture)
 if (gameMusicEl) {

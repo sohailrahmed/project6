@@ -73,6 +73,12 @@ body {
   font-size: 14px;
 }
 
+.hud-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .hud-left span,
 .hud-right span {
   margin-right: 8px;
@@ -97,7 +103,6 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
-  margin-left: 8px;
   align-items: center;
 }
 
