@@ -16,13 +16,14 @@
       <div id="player-hearts" class="player-hearts" aria-label="Health"></div>
       <div id="player-coins" class="player-coins" aria-label="Coins"></div>
     </div>
-    <div class="hud-right">
+    <div class="hud-center">
       <span id="enemies-label">Enemies left:</span>
       <span id="enemies-value">0</span>
-      <div class="controls-hint" aria-label="Controls">
-        <span>R — cycle</span>
-        <span>Spacebar — attack / use</span>
-      </div>
+    </div>
+    <div class="hud-right controls-hint" aria-label="Controls">
+      <span>WASD / Arrows — move</span>
+      <span>Spacebar — attack / use</span>
+      <span>R — cycle thru inventory</span>
     </div>
   </div>
 
@@ -60,6 +61,9 @@
   </audio>
   <audio id="trapdoor-open" preload="auto">
     <source src="freesound_community-boulder-push-40549.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="character-select-click" preload="auto">
+    <source src="amaze98-clicking-interface-select-201946.mp3" type="audio/mpeg">
   </audio>
   <script src="game.js?v=2"></script>
 </body>

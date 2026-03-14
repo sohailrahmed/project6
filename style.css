@@ -69,6 +69,8 @@ body {
   max-width: 100%;
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
   margin-bottom: 8px;
   font-size: 14px;
 }
@@ -80,8 +82,17 @@ body {
 }
 
 .hud-left span,
+.hud-center span,
 .hud-right span {
   margin-right: 8px;
+}
+
+.hud-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  font-size: 14px;
 }
 
 .player-hearts {
@@ -107,14 +118,13 @@ body {
 }
 
 .controls-hint {
-  margin-left: 16px;
-  padding-left: 12px;
-  border-left: 1px solid #444;
-  font-size: 11px;
+  font-size: 18px;
   color: #78909c;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
+  align-items: flex-end;
+  text-align: right;
 }
 
 .player-coins .coin {

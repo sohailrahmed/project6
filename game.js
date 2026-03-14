@@ -20,6 +20,7 @@ const heartPickupEl = document.getElementById("heart-pickup");
 const bossChamberEl = document.getElementById("boss-chamber");
 const secretDoorOpenEl = document.getElementById("secret-door-open");
 const trapDoorOpenEl = document.getElementById("trapdoor-open");
+const characterSelectClickEl = document.getElementById("character-select-click");
 const ROOM_WIDTH = 640;
 const ROOM_HEIGHT = 480;
 const MINIMAP_PANEL_WIDTH = 140;
@@ -1284,11 +1285,19 @@ document.addEventListener("keydown", (e) => {
   if (characterSelectActive) {
     if (e.key === "ArrowLeft" || e.key === "Left") {
       selectedCharacterIndex = (selectedCharacterIndex - 1 + CHARACTER_OPTIONS.length) % CHARACTER_OPTIONS.length;
+      if (characterSelectClickEl) {
+        characterSelectClickEl.currentTime = 0;
+        characterSelectClickEl.play().catch(() => {});
+      }
       e.preventDefault();
       return;
     }
     if (e.key === "ArrowRight" || e.key === "Right") {
       selectedCharacterIndex = (selectedCharacterIndex + 1) % CHARACTER_OPTIONS.length;
+      if (characterSelectClickEl) {
+        characterSelectClickEl.currentTime = 0;
+        characterSelectClickEl.play().catch(() => {});
+      }
       e.preventDefault();
       return;
     }
@@ -1392,6 +1401,23 @@ document.addEventListener("keydown", (e) => {
 
 document.addEventListener("keyup", (e) => {
   keys[e.key.toLowerCase()] = false;
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  if (!characterSelectActive) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+  const panel = characterSelectPanelAt(x, y);
+  if (panel >= 0 && panel !== selectedCharacterIndex) {
+    selectedCharacterIndex = panel;
+    if (characterSelectClickEl) {
+      characterSelectClickEl.currentTime = 0;
+      characterSelectClickEl.play().catch(() => {});
+    }
+  }
 });
 
 restartButton.addEventListener("click", () => {
@@ -3321,6 +3347,25 @@ function getCharacterSelectSprite(index) {
   return { img: radiyyaHeroImage, loaded: radiyyaHeroLoaded, fw: radiyyaHeroFrameWidth, fh: radiyyaHeroFrameHeight };
 }
 
+function characterSelectPanelAt(x, y) {
+  const cw = canvas.width;
+  const ch = canvas.height;
+  const numOptions = CHARACTER_OPTIONS.length;
+  const panelW = 180;
+  const panelH = 220;
+  const gap = 60;
+  const totalW = numOptions * panelW + (numOptions - 1) * gap;
+  const startX = (cw - totalW) / 2 + panelW / 2;
+  const centerY = ch / 2 - 20;
+  for (let i = 0; i < numOptions; i++) {
+    const cx = startX + i * (panelW + gap);
+    const boxLeft = cx - panelW / 2;
+    const boxTop = centerY - panelH / 2;
+    if (x >= boxLeft && x < boxLeft + panelW && y >= boxTop && y < boxTop + panelH) return i;
+  }
+  return -1;
+}
+
 function drawCharacterSelectScreen() {
   const cw = canvas.width;
   const ch = canvas.height;
@@ -3361,8 +3406,15 @@ function drawCharacterSelectScreen() {
     const avatarTop = boxTop + 10;
     const avatarBoxH = avatarH - 10;
     if (sprite.loaded && sprite.fw > 0 && sprite.fh > 0) {
-      const row = 0;
       const col = 1;
+      let row;
+      if (isSelected) {
+        const phase = (Date.now() / 280) % 4;
+        const step = Math.floor(phase) % 4;
+        row = [0, 3, 1, 2][step];
+      } else {
+        row = 0;
+      }
       const sx = col * sprite.fw;
       const sy = row * sprite.fh;
       const scale = Math.min((panelW - 20) / sprite.fw, avatarBoxH / sprite.fh);
