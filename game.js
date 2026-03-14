@@ -1420,6 +1420,21 @@ canvas.addEventListener("mousemove", (e) => {
   }
 });
 
+canvas.addEventListener("click", (e) => {
+  if (!characterSelectActive) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+  const panel = characterSelectPanelAt(x, y);
+  if (panel >= 0) {
+    currentHeroSheet = CHARACTER_OPTIONS[panel].id;
+    characterSelectActive = false;
+    showStartScreen();
+  }
+});
+
 restartButton.addEventListener("click", () => {
   if (characterSelectActive) {
     currentHeroSheet = CHARACTER_OPTIONS[selectedCharacterIndex].id;
