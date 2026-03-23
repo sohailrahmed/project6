@@ -306,6 +306,10 @@ let shopkeeperCaptionUntil = 0;
 let shopkeeperCaptionIndex = 0;
 let shopkeeperCaptionNextAt = 0;
 let gameFrameCount = 0;
+let speedrunTimerActive = false;
+let speedrunStartTime = 0;
+let speedrunElapsedMs = 0;
+let speedrunStopped = false;
 const SHOPKEEPER_CAPTION_INTERVAL = 300;
 const SHOPKEEPER_CAPTION_DURATION = 180;
 
@@ -1304,6 +1308,10 @@ document.addEventListener("keydown", (e) => {
     if ((e.key === " " || e.code === "Space") && !e.repeat) {
       currentHeroSheet = CHARACTER_OPTIONS[selectedCharacterIndex].id;
       characterSelectActive = false;
+      speedrunTimerActive = true;
+      speedrunStartTime = Date.now();
+      speedrunElapsedMs = 0;
+      speedrunStopped = false;
       showStartScreen();
       e.preventDefault();
       return;
@@ -1431,6 +1439,10 @@ canvas.addEventListener("click", (e) => {
   if (panel >= 0) {
     currentHeroSheet = CHARACTER_OPTIONS[panel].id;
     characterSelectActive = false;
+    speedrunTimerActive = true;
+    speedrunStartTime = Date.now();
+    speedrunElapsedMs = 0;
+    speedrunStopped = false;
     showStartScreen();
   }
 });
@@ -2454,6 +2466,11 @@ function showEndMessage() {
   startHintEl.textContent = "";
   overlayEl.classList.remove("hidden");
   if (gameMusicEl) gameMusicEl.pause();
+  if (speedrunTimerActive) {
+    speedrunElapsedMs = Date.now() - speedrunStartTime;
+    speedrunTimerActive = false;
+    speedrunStopped = true;
+  }
 }
 
 function drawRoomBackground() {
@@ -3456,6 +3473,26 @@ function drawCharacterSelectScreen() {
   ctx.fillText("Left / Right arrows to choose — Space to start", cw / 2, ch - 24);
 }
 
+function drawSpeedrunTimer() {
+  if (!speedrunTimerActive && !speedrunStopped) return;
+  const ms = speedrunStopped ? speedrunElapsedMs : (Date.now() - speedrunStartTime);
+  const ds = Math.floor(ms / 100) % 10;
+  const secs = Math.floor(ms / 1000) % 60;
+  const mins = Math.floor(ms / 60000);
+  const timeStr = String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0') + '.' + ds;
+
+  const x = ROOM_MARGIN_X + ROOM_WIDTH - 8;
+  const y = ROOM_MARGIN_Y + 8;
+  ctx.font = 'bold 16px monospace';
+  const boxW = ctx.measureText(timeStr).width + 20;
+  ctx.fillStyle = speedrunStopped ? (victory ? 'rgba(0,160,60,0.9)' : 'rgba(160,30,30,0.9)') : 'rgba(0,0,0,0.75)';
+  ctx.fillRect(x - boxW, y, boxW, 26);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText(timeStr, x - 8, y + 5);
+}
+
 function gameLoop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -3524,6 +3561,7 @@ function gameLoop() {
   drawPlayerShield();
   drawSealedDoorCaption();
   drawUIHints();
+  drawSpeedrunTimer();
   ctx.restore();
 
   if (cavernBlackAlpha > 0) {
@@ -3544,4 +3582,3 @@ if (gameMusicEl) {
   gameMusicEl.volume = 0.5;
   gameMusicEl.play().catch(() => {});
 }
-
